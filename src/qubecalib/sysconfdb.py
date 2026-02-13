@@ -400,7 +400,7 @@ class SystemConfigDatabase:
             ipaddr_sss=str(s.ipaddr_sss),
             ipaddr_css=str(s.ipaddr_css),
             boxtype=s.boxtype,
-            skip_init=True,
+            skip_init=False,
         )
         if reconnect:
             if not all([_ for _ in box.link_status().values()]):

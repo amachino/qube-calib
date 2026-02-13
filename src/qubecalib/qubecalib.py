@@ -2191,7 +2191,7 @@ class BoxPool:
             ipaddr_sss=ipaddr_sss,
             ipaddr_css=ipaddr_css,
             boxtype=boxtype,
-            skip_init=True,
+            skip_init=False,
             # config_root=config_root,
             # config_options=config_options,
         )
