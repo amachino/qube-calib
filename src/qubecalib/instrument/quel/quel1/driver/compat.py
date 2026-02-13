@@ -69,12 +69,36 @@ def convert_captureparam(cprm: CaptureParam) -> CapParam:
     cap_param.classification_enable = DspUnit.CLASSIFICATION in dsp_enabled
 
     if hasattr(cprm, "complex_fir_coefs"):
+        # e7awgsw stores FIR coefficients as fixed-point-like integers, while
+        # quel_ic_config.CapParam expects normalized float coefficients.
+        # Convert by exponent offset and clamp to the accepted range [-2.0, 2.0).
+        fir = np.asarray(cprm.complex_fir_coefs, dtype=np.complex64)
+        fir_scale = float(1 << cap_param.complexfir_exponent_offset)
+        fir_lower = np.float32(-2.0)
+        fir_upper = np.nextafter(np.float32(2.0), np.float32(0.0))
+        fir_real = np.clip(np.real(fir) / fir_scale, fir_lower, fir_upper)
+        fir_imag = np.clip(np.imag(fir) / fir_scale, fir_lower, fir_upper)
         cap_param.complexfir_coeff = np.asarray(
-            cprm.complex_fir_coefs, dtype=np.complex64
+            fir_real + 1j * fir_imag,
+            dtype=np.complex64,
         )
     if hasattr(cprm, "complex_window_coefs"):
+        # e7awgsw window coefficients are also integer-scaled values.
+        # CapParam validates normalized coefficients in [-2.0, 2.0), so rescale
+        # by 2^30 and clamp for backend compatibility.
+        window = np.asarray(cprm.complex_window_coefs, dtype=np.complex128)
+        window_scale = float(1 << 30)
+        window_lower = np.float64(-2.0)
+        window_upper = np.nextafter(np.float64(2.0), np.float64(0.0))
+        window_real = np.clip(
+            np.real(window) / window_scale, window_lower, window_upper
+        )
+        window_imag = np.clip(
+            np.imag(window) / window_scale, window_lower, window_upper
+        )
         cap_param.window_coeff = np.asarray(
-            cprm.complex_window_coefs, dtype=np.complex128
+            window_real + 1j * window_imag,
+            dtype=np.complex128,
         )
     return cap_param
 

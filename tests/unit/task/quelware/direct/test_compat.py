@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 from e7awgsw import CaptureParam, DspUnit, WaveSequence
 from qubecalib.instrument.quel.quel1.driver.compat import (
     convert_captureparam,
@@ -42,3 +43,31 @@ def test_convert_captureparam_maps_basic_dsp_flags() -> None:
     assert converted.sections[0].num_blank_word == 4
     assert converted.integration_enable is False
     assert converted.decimation_enable is True
+
+
+def test_convert_captureparam_scales_complex_fir_coefficients() -> None:
+    """Given integer FIR coefficients, conversion rescales for CapParam."""
+    cprm = CaptureParam()
+    cprm.complex_fir_coefs = [complex(-32768.0, -32768.0)] * 16
+    cprm.sel_dsp_units_to_enable(DspUnit.COMPLEX_FIR)
+
+    converted = convert_captureparam(cprm)
+
+    assert np.all(np.real(converted.complexfir_coeff) >= -2.0)
+    assert np.all(np.real(converted.complexfir_coeff) < 2.0)
+    assert np.all(np.imag(converted.complexfir_coeff) >= -2.0)
+    assert np.all(np.imag(converted.complexfir_coeff) < 2.0)
+
+
+def test_convert_captureparam_scales_window_coefficients() -> None:
+    """Given integer window coefficients, conversion rescales for CapParam."""
+    cprm = CaptureParam()
+    cprm.complex_window_coefs = [complex(-2147483648.0, -2147483648.0)] * 2048
+    cprm.sel_dsp_units_to_enable(DspUnit.COMPLEX_WINDOW)
+
+    converted = convert_captureparam(cprm)
+
+    assert np.all(np.real(converted.window_coeff) >= -2.0)
+    assert np.all(np.real(converted.window_coeff) < 2.0)
+    assert np.all(np.imag(converted.window_coeff) >= -2.0)
+    assert np.all(np.imag(converted.window_coeff) < 2.0)
