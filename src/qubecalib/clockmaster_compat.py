@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
+
 from quel_ic_config import Quel1Box, QuelClockMasterV1
 
 _BOX_BY_SSS_IPADDR: dict[str, Quel1Box] = {}
+logger = logging.getLogger(__name__)
 
 
 def register_box(box: Quel1Box) -> None:
@@ -67,3 +70,11 @@ class QuBEMasterClient:
         finally:
             master.terminate()
         return True, counter
+
+    def reset(self) -> bool:
+        """Reset the clock master when supported by backend implementation."""
+        logger.warning(
+            "Clock master reset is not supported by the current quelware "
+            "implementation."
+        )
+        return False
