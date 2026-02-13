@@ -225,7 +225,6 @@ class Action:
         # Triggered Capture
         if all([bool(self._wseqs), bool(self._cprms), bool(self._triggers)]):
             futures = self.capture_start()
-            self.start_emission()
             return self.capture_stop(futures)
         # Awg only
         elif all([bool(self._wseqs), not bool(self._cprms), not bool(self._triggers)]):
