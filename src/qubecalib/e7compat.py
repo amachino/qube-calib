@@ -1,3 +1,5 @@
+"""Compatibility layer for legacy e7awgsw-like data structures."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -46,6 +48,23 @@ class IqWave:
         q: npt.ArrayLike,
         num_samples_in_wave_block: int,
     ) -> npt.NDArray[np.float32]:
+        """
+        Convert separate I/Q arrays into the legacy `Nx2` IQ format.
+
+        Parameters
+        ----------
+        i : ArrayLike
+            Real component samples.
+        q : ArrayLike
+            Imaginary component samples.
+        num_samples_in_wave_block : int
+            Block size for right-padding.
+
+        Returns
+        -------
+        NDArray[np.float32]
+            Two-column `float32` IQ samples.
+        """
         i_arr = np.asarray(i, dtype=np.float32).reshape(-1)
         q_arr = np.asarray(q, dtype=np.float32).reshape(-1)
         if i_arr.shape != q_arr.shape:
@@ -73,15 +92,36 @@ class WaveSequence:
 
     @property
     def num_chunks(self) -> int:
+        """
+        Return the number of chunks.
+
+        Returns
+        -------
+        int
+            Number of registered chunks.
+        """
         return len(self._chunks)
 
     def add_chunk(
         self,
-        *,
         iq_samples: Any,
+        *,
         num_blank_words: int = 0,
         num_repeats: int = 1,
     ) -> None:
+        """
+        Append one waveform chunk.
+
+        Parameters
+        ----------
+        iq_samples : Any
+            Complex array or `Nx2` array of IQ values. This argument is
+            positional to keep compatibility with legacy call sites.
+        num_blank_words : int, optional
+            Blank words after the chunk.
+        num_repeats : int, optional
+            Repeat count for the chunk.
+        """
         samples = _normalize_iq_samples(iq_samples)
         self._chunks.append(
             _WaveChunk(
@@ -92,6 +132,19 @@ class WaveSequence:
         )
 
     def chunk(self, index: int) -> _WaveChunk:
+        """
+        Return one chunk by index.
+
+        Parameters
+        ----------
+        index : int
+            Chunk index.
+
+        Returns
+        -------
+        _WaveChunk
+            Chunk metadata and samples.
+        """
         return self._chunks[index]
 
 
@@ -116,9 +169,27 @@ class CaptureParam:
         ] = {}
 
     def add_sum_section(self, num_words: int, num_post_blank_words: int = 1) -> None:
+        """
+        Append one integration/sum section.
+
+        Parameters
+        ----------
+        num_words : int
+            Capture words in the section.
+        num_post_blank_words : int, optional
+            Post-blank words after the section.
+        """
         self.sum_section_list.append((int(num_words), int(num_post_blank_words)))
 
     def sel_dsp_units_to_enable(self, *dsp_units: DspUnit) -> None:
+        """
+        Enable DSP units with duplicate removal while preserving order.
+
+        Parameters
+        ----------
+        dsp_units : DspUnit
+            Units to enable.
+        """
         dedup: list[DspUnit] = []
         for unit in dsp_units:
             if unit not in dedup:
@@ -133,6 +204,20 @@ class CaptureParam:
         coef_b: np.float32,
         const_c: np.float32,
     ) -> None:
+        """
+        Store classifier decision parameters.
+
+        Parameters
+        ----------
+        func_sel : int
+            Function selector index.
+        coef_a : np.float32
+            Linear coefficient A.
+        coef_b : np.float32
+            Linear coefficient B.
+        const_c : np.float32
+            Constant coefficient C.
+        """
         self.classification_params[int(func_sel)] = (
             np.float32(coef_a),
             np.float32(coef_b),
@@ -141,6 +226,7 @@ class CaptureParam:
 
 
 def _normalize_iq_samples(iq_samples: Any) -> npt.NDArray[np.float32]:
+    """Normalize input samples to `Nx2` `float32` IQ format."""
     arr = np.asarray(iq_samples)
     if arr.ndim == 1 and np.iscomplexobj(arr):
         re = np.asarray(np.real(arr), dtype=np.float32)

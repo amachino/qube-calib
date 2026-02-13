@@ -1,3 +1,5 @@
+"""Common direct-driver entry points for single and multi-box execution."""
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -5,88 +7,108 @@ from typing import Final, NamedTuple
 
 import numpy as np
 import numpy.typing as npt
+from qubecalib.e7compat import CaptureParam, WaveSequence
 from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
 
-from qubecalib.e7compat import CaptureParam, WaveSequence
 from . import multi, single
 from .single import Quel1PortType
 
 
 class AwgId(NamedTuple):
+    """AWG identifier including box name."""
+
     box: str
     port: Quel1PortType
     channel: int
 
 
 class RunitId(NamedTuple):
+    """Capture runit identifier including box name."""
+
     box: str
     port: Quel1PortType
     runit: int
 
 
 class AwgSetting(NamedTuple):
+    """AWG programming setting including box scope."""
+
     awg: AwgId
     wseq: WaveSequence
 
 
 class RunitSetting(NamedTuple):
+    """Capture programming setting including box scope."""
+
     runit: RunitId
     cprm: CaptureParam
 
 
 class TriggerSetting(NamedTuple):
-    trigger_awg: AwgId  # box, port, channel
-    triggerd_port: Quel1PortType  # port
+    """Trigger mapping from box-scoped AWG to destination port."""
+
+    trigger_awg: AwgId
+    triggerd_port: Quel1PortType
 
 
 def _convert_to_box_setting_dict(
     settings: list[RunitSetting | AwgSetting | TriggerSetting],
 ) -> dict[str, list[single.AwgSetting | single.RunitSetting | single.TriggerSetting]]:
-    rslt: dict[
-        str, list[single.AwgSetting | single.RunitSetting | single.TriggerSetting]
+    """Group common settings by box name and convert to single-box settings."""
+    settings_by_box: dict[
+        str,
+        list[single.AwgSetting | single.RunitSetting | single.TriggerSetting],
     ] = defaultdict(list)
-    for s in settings:
-        if isinstance(s, RunitSetting):
-            rslt[s.runit.box].append(
+    for setting in settings:
+        if isinstance(setting, RunitSetting):
+            settings_by_box[setting.runit.box].append(
                 single.RunitSetting(
                     single.RunitId(
-                        s.runit.port,
-                        s.runit.runit,
+                        setting.runit.port,
+                        setting.runit.runit,
                     ),
-                    s.cprm,
+                    setting.cprm,
                 )
             )
-        elif isinstance(s, AwgSetting):
-            rslt[s.awg.box].append(
+        elif isinstance(setting, AwgSetting):
+            settings_by_box[setting.awg.box].append(
                 single.AwgSetting(
                     single.AwgId(
-                        s.awg.port,
-                        s.awg.channel,
+                        setting.awg.port,
+                        setting.awg.channel,
                     ),
-                    s.wseq,
+                    setting.wseq,
                 )
             )
-        elif isinstance(s, TriggerSetting):
-            rslt[s.trigger_awg.box].append(
+        elif isinstance(setting, TriggerSetting):
+            settings_by_box[setting.trigger_awg.box].append(
                 single.TriggerSetting(
                     single.AwgId(
-                        s.trigger_awg.port,
-                        s.trigger_awg.channel,
+                        setting.trigger_awg.port,
+                        setting.trigger_awg.channel,
                     ),
-                    s.triggerd_port,
+                    setting.triggerd_port,
                 )
             )
-    return rslt
+        else:
+            raise TypeError(f"unsupported setting: {setting}")
+    return settings_by_box
 
 
 def _convert_to_box_settings(
     settings: list[RunitSetting | AwgSetting | TriggerSetting],
 ) -> list[multi.BoxSetting]:
-    d = _convert_to_box_setting_dict(settings)
-    return [multi.BoxSetting(name, s) for name, s in d.items()]
+    """Convert flat common settings into box-scoped settings."""
+    settings_by_box = _convert_to_box_setting_dict(settings)
+    return [
+        multi.BoxSetting(name, box_settings)
+        for name, box_settings in settings_by_box.items()
+    ]
 
 
 class Action:
+    """Wrapper action that dispatches to single-box or multi-box implementation."""
+
     def __init__(self, action: tuple[str, single.Action] | multi.Action) -> None:
         self._action: Final[tuple[str, single.Action] | multi.Action] = action
 
@@ -97,26 +119,39 @@ class Action:
         system: multi.Quel1System,
         settings: list[RunitSetting | AwgSetting | TriggerSetting],
     ) -> Action:
+        """
+        Build an executable action from common settings.
+
+        Parameters
+        ----------
+        system : multi.Quel1System
+            Target system instance.
+        settings : list[RunitSetting | AwgSetting | TriggerSetting]
+            Box-scoped common settings.
+
+        Returns
+        -------
+        Action
+            Built action object.
+        """
         if not settings:
             raise ValueError("no settings provided")
-        s = _convert_to_box_settings(settings)
-        for box in [box for box in s]:
-            if box.name not in system.boxes:
-                raise ValueError(f"box {box.name} not found in system")
-            # There is no problem with having many systems.boxes.
-        if len(s) == 1:
-            self = cls(
+        box_settings = _convert_to_box_settings(settings)
+        for setting in box_settings:
+            if setting.name not in system.boxes:
+                raise ValueError(f"box {setting.name} not found in system")
+        if len(box_settings) == 1:
+            item = box_settings[0]
+            return cls(
                 (
-                    s[0].name,
+                    item.name,
                     single.Action.build(
-                        box=system.box[s[0].name],
-                        settings=s[0].settings,
+                        box=system.box[item.name],
+                        settings=item.settings,
                     ),
                 )
             )
-        else:
-            self = cls(multi.Action.build(quel1system=system, settings=s))
-        return self
+        return cls(multi.Action.build(quel1system=system, settings=box_settings))
 
     def action(
         self,
@@ -124,13 +159,20 @@ class Action:
         dict[tuple[str, Quel1PortType], CaptureReturnCode],
         dict[tuple[str, Quel1PortType, int], npt.NDArray[np.complex64]],
     ]:
+        """
+        Execute and normalize results to box-scoped maps.
+
+        Returns
+        -------
+        tuple[dict[tuple[str, Quel1PortType], CaptureReturnCode], dict[tuple[str, Quel1PortType, int], NDArray[np.complex64]]]
+            Box-prefixed status and IQ data.
+        """
         if isinstance(self._action, tuple):
-            name = self._action[0]
-            status, data = self._action[1].action()
-            return {(name, k): v for k, v in status.items()}, {
-                (name, k[0], k[1]): v for k, v in data.items()
+            name, single_action = self._action
+            status, data = single_action.action()
+            return {(name, key): value for key, value in status.items()}, {
+                (name, key[0], key[1]): value for key, value in data.items()
             }
-        elif isinstance(self._action, multi.Action):
+        if isinstance(self._action, multi.Action):
             return self._action.action()
-        else:
-            raise ValueError("invalid action state")
+        raise TypeError("invalid action state")

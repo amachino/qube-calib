@@ -1,3 +1,5 @@
+"""Clock-master and sequencer client compatibility wrappers."""
+
 from __future__ import annotations
 
 import logging
@@ -26,9 +28,19 @@ class SequencerClient:
         self._box = box
 
     def read_clock(self) -> tuple[bool, int, int]:
+        """
+        Read current and SYSREF counters from the associated box.
+
+        Returns
+        -------
+        tuple[bool, int, int]
+            `(success, current_counter, latest_sysref_counter)`.
+        """
         box = self._box or _BOX_BY_SSS_IPADDR.get(self._target_ipaddr)
         if box is None:
-            raise RuntimeError(f"box for SSS IP {self._target_ipaddr} is not registered")
+            raise RuntimeError(
+                f"box for SSS IP {self._target_ipaddr} is not registered"
+            )
         return (
             True,
             int(box.get_current_timecounter()),
@@ -51,6 +63,14 @@ class QuBEMasterClient:
         self._master_ipaddr = str(resolved)
 
     def kick_clock_synch(self, box_sss_ipaddrs: list[str]) -> None:
+        """
+        Trigger clock synchronization across registered boxes.
+
+        Parameters
+        ----------
+        box_sss_ipaddrs : list[str]
+            SSS addresses of boxes to synchronize.
+        """
         boxes = []
         for ipaddr in box_sss_ipaddrs:
             box = _BOX_BY_SSS_IPADDR.get(str(ipaddr))
@@ -64,6 +84,14 @@ class QuBEMasterClient:
             master.terminate()
 
     def read_clock(self) -> tuple[bool, int]:
+        """
+        Read current counter value from the clock master.
+
+        Returns
+        -------
+        tuple[bool, int]
+            `(success, current_counter)`.
+        """
         master = QuelClockMasterV1(ipaddr=self._master_ipaddr, boxes=[])
         try:
             counter = int(master.get_current_timecounter())

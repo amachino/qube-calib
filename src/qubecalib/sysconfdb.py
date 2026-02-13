@@ -1,16 +1,19 @@
+"""System configuration models and builders for quelware-backed calibration."""
+
 from __future__ import annotations
 
+import builtins
 import json
 import logging
 import os
+from collections.abc import MutableSequence
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from ipaddress import IPv4Address, IPv6Address, ip_address
 from pathlib import Path
-from typing import Any, Final, MutableSequence, Optional, Set
+from typing import Any, Final
 
 import yaml
-from .clockmaster_compat import QuBEMasterClient, register_box
 from quel_ic_config import (
     QUEL1_BOXTYPE_ALIAS,
     Quel1Box,
@@ -18,6 +21,7 @@ from quel_ic_config import (
     Quel1ConfigOption,
 )
 
+from .clockmaster_compat import QuBEMasterClient, register_box
 from .instrument.quel.quel1 import driver as direct
 from .instrument.quel.quel1.driver import Quel1PortType
 
@@ -29,8 +33,11 @@ Quel1BoxWithRawWss = Quel1Box
 
 
 class SystemConfigDatabase:
+    """Store and resolve box/port/target relationships for calibration flows."""
+
     def __init__(self) -> None:
-        self._clockmaster_setting: Optional[ClockmasterSetting] = None
+        """Initialize an empty in-memory configuration database."""
+        self._clockmaster_setting: ClockmasterSetting | None = None
         self._box_settings: Final[dict[str, BoxSetting]] = {}
         self._box_aliases: Final[dict[str, str]] = {}
         self._port_settings: Final[dict[str, PortSetting]] = {}
@@ -49,7 +56,40 @@ class SystemConfigDatabase:
 
     @property
     def box_settings(self) -> dict[str, BoxSetting]:
+        """Return configured box settings keyed by box name."""
         return self._box_settings
+
+    @property
+    def box_aliases(self) -> dict[str, str]:
+        """Return configured box aliases."""
+        return self._box_aliases
+
+    @property
+    def port_settings(self) -> dict[str, PortSetting]:
+        """Return configured port settings keyed by port name."""
+        return self._port_settings
+
+    @property
+    def clockmaster_setting(self) -> ClockmasterSetting | None:
+        """Return clockmaster settings when configured."""
+        return self._clockmaster_setting
+
+    @property
+    def target_settings(self) -> dict[str, dict[str, Any]]:
+        """Return target settings keyed by target name."""
+        return self._target_settings
+
+    @property
+    def relation_channel_port(
+        self,
+    ) -> MutableSequence[tuple[str, dict[str, str | int]]]:
+        """Return channel-to-port relation records."""
+        return self._relation_channel_port
+
+    @property
+    def relation_channel_target(self) -> MutableSequence[tuple[str, str]]:
+        """Return channel-to-target relation records."""
+        return self._relation_channel_target
 
     def copy(self) -> SystemConfigDatabase:
         """Return a copy of the current instance."""
@@ -60,6 +100,7 @@ class SystemConfigDatabase:
         ipaddr: str,
         reset: bool,
     ) -> None:
+        """Set the clockmaster connection settings."""
         self._clockmaster_setting = ClockmasterSetting(
             ipaddr=ipaddr,
             reset=reset,
@@ -67,16 +108,16 @@ class SystemConfigDatabase:
 
     def set(
         self,
-        clockmaster_setting: Optional[dict] = None,
-        box_settings: Optional[dict] = None,
-        box_aliases: Optional[dict[str, str]] = None,
-        port_settings: Optional[dict[str, dict[str, Any]]] = None,
-        relation_channel_target: Optional[MutableSequence[tuple[str, str]]] = None,
-        target_settings: Optional[dict[str, dict[str, object]]] = None,
-        relation_channel_port: Optional[
-            MutableSequence[tuple[str, dict[str, str | int]]]
-        ] = None,
+        clockmaster_setting: dict | None = None,
+        box_settings: dict | None = None,
+        box_aliases: dict[str, str] | None = None,
+        port_settings: dict[str, dict[str, Any]] | None = None,
+        relation_channel_target: MutableSequence[tuple[str, str]] | None = None,
+        target_settings: dict[str, dict[str, object]] | None = None,
+        relation_channel_port: MutableSequence[tuple[str, dict[str, str | int]]]
+        | None = None,
     ) -> None:
+        """Load partial configuration dictionaries into the current instance."""
         if clockmaster_setting is not None:
             self._clockmaster_setting = ClockmasterSetting(
                 ipaddr=clockmaster_setting["ipaddr"],
@@ -97,7 +138,7 @@ class SystemConfigDatabase:
                 if "port_name" not in setting:
                     setting["port_name"] = port_name
                 if not isinstance(port_name, str):
-                    raise ValueError("port_name must be a string")
+                    raise TypeError("port_name must be a string")
                 # if "port_name" in setting:
                 #     raise ValueError(f"port_name must not be in setting '{port_name}'")
                 # self.add_port_setting(port_name=port_name, **setting)
@@ -113,9 +154,10 @@ class SystemConfigDatabase:
                 self._relation_channel_port.append(rcp)
 
     def load(self, path_to_database_file: str | os.PathLike) -> None:
-        with open(Path(os.getcwd()) / Path(path_to_database_file), "r") as file:
+        """Load serialized settings from a JSON database file."""
+        with open(Path(os.getcwd()) / Path(path_to_database_file)) as file:
             configs = json.load(file)
-        # TODO workaround
+        # Keep compatibility with legacy serialized key layout.
         settings = {
             k: v
             for k, v in configs.items()
@@ -132,11 +174,11 @@ class SystemConfigDatabase:
         settings["relation_channel_target"] = relation_channel_target
         relation_channel_port = configs["relation_channel_port"]
         settings["relation_channel_port"] = relation_channel_port
-        # TODO ----------
         self.set(**settings)
 
     def load_box_yaml(self, filename: str) -> None:
-        with open(Path(os.getcwd()) / Path(filename), "r") as file:
+        """Load box settings from a YAML file."""
+        with open(Path(os.getcwd()) / Path(filename)) as file:
             yaml_dict = yaml.safe_load(file)
         self._load_box_yaml(yaml_dict)
 
@@ -150,7 +192,8 @@ class SystemConfigDatabase:
             )
 
     def load_skew_yaml(self, filename: str) -> None:
-        with open(Path(os.getcwd()) / Path(filename), "r") as file:
+        """Load skew-related timing settings from a YAML file."""
+        with open(Path(os.getcwd()) / Path(filename)) as file:
             yaml_dict = yaml.safe_load(file)
         self._load_skew_yaml(yaml_dict)
 
@@ -158,7 +201,7 @@ class SystemConfigDatabase:
         for name, setting in yaml_dict["box_setting"].items():
             self.timing_shift[name] = setting["slot"] * 16
             self.skew[name] = setting["wait"]
-            # TODO : もうちょっとスマートに書けるはず
+            # Normalize optional per-port skew map.
             if "port_wait" in setting:
                 self.port_skew[name] = {}
                 for port, wait in setting["port_wait"].items():
@@ -172,14 +215,17 @@ class SystemConfigDatabase:
         box_name: str,
         ipaddr_wss: str | IPv4Address | IPv6Address,
         boxtype: Quel1BoxType,
-        ipaddr_sss: Optional[str | IPv4Address | IPv6Address] = None,
-        ipaddr_css: Optional[str | IPv4Address | IPv6Address] = None,
-        config_root: Optional[str | os.PathLike] = None,
-        config_options: MutableSequence[Quel1ConfigOption] = [],
+        ipaddr_sss: str | IPv4Address | IPv6Address | None = None,
+        ipaddr_css: str | IPv4Address | IPv6Address | None = None,
+        config_root: str | os.PathLike | None = None,
+        config_options: MutableSequence[Quel1ConfigOption] | None = None,
         adapter: str | None = None,
     ) -> None:
+        """Add or replace a box setting entry."""
         if isinstance(boxtype, str):
             boxtype = QUEL1_BOXTYPE_ALIAS[boxtype]
+        if config_options is None:
+            config_options = []
         self._box_settings[box_name] = BoxSetting(
             box_name=box_name,
             ipaddr_wss=ipaddr_wss,
@@ -203,6 +249,7 @@ class SystemConfigDatabase:
         fnco_freq: tuple[float] | tuple[float, float, float] = (0.0,),
         ndelay_or_nwait: tuple[int, ...] = (),
     ) -> None:
+        """Add or replace a port setting entry."""
         self._port_settings[port_name] = PortSetting(
             port_name=port_name,
             box_name=box_name,
@@ -219,6 +266,7 @@ class SystemConfigDatabase:
         self,
         target_name: str,
     ) -> __builtins__.set[str]:
+        """Return channel names bound to the target."""
         return {
             channel
             for channel, target in self._relation_channel_target
@@ -226,7 +274,30 @@ class SystemConfigDatabase:
         }
 
     def assign_target_to_channel(self, *, target: str, channel: str) -> None:
+        """Register a channel-to-target relation."""
         self._relation_channel_target.append((channel, target))
+
+    def append_channel_port_relation(
+        self,
+        *,
+        channel_name: str,
+        port_name: str,
+        channel_number: int,
+    ) -> None:
+        """Append a channel-to-port relation entry."""
+        self._relation_channel_port.append(
+            (
+                channel_name,
+                {
+                    "port_name": port_name,
+                    "channel_number": channel_number,
+                },
+            ),
+        )
+
+    def set_target_frequency(self, *, target_name: str, frequency: float) -> None:
+        """Set target frequency in GHz."""
+        self._target_settings[target_name] = {"frequency": frequency}
 
     def define_target(
         self,
@@ -235,6 +306,7 @@ class SystemConfigDatabase:
         frequency: float = 0,
         channels: list[str] | None = None,
     ) -> None:
+        """Define a target and optionally assign channels to it."""
         if target in self._target_settings:
             raise ValueError(f"target {target} is already defined")
         self._target_settings[target] = {"frequency": frequency}
@@ -247,55 +319,47 @@ class SystemConfigDatabase:
         self,
         target_name: str,
     ) -> __builtins__.set[int]:
+        """Return channel indices bound to the target."""
         channels = self.get_channels_by_target(target_name)
+        channel_port_map = dict(self._relation_channel_port)
         return {
-            int(
-                {_: port for _, port in self._relation_channel_port}[channel][
-                    "channel_number"
-                ]
-            )
-            for channel in channels
+            int(channel_port_map[channel]["channel_number"]) for channel in channels
         }
 
     def get_channel(
         self,
         channel_name: str,
     ) -> tuple[str, str, int]:
+        """Resolve channel metadata as `(box_name, port_name, channel_number)`."""
         port_name = self.get_port_by_channel(channel_name)
         box_name = self._port_settings[port_name].box_name
         channel_number = self.get_channel_number_by_channel(channel_name)
         return box_name, port_name, channel_number
 
     def get_port_by_channel(self, channel_name: str) -> str:
-        retval = {channel: port for channel, port in self._relation_channel_port}[
-            channel_name
-        ]["port_name"]
+        """Return the port name assigned to a channel."""
+        retval = dict(self._relation_channel_port)[channel_name]["port_name"]
         return retval if isinstance(retval, str) else ""
 
     def get_channel_number_by_channel(self, channel_name: str) -> int:
-        retval = {channel: port for channel, port in self._relation_channel_port}[
-            channel_name
-        ]["channel_number"]
+        """Return the channel index assigned to a channel name."""
+        retval = dict(self._relation_channel_port)[channel_name]["channel_number"]
         return retval if isinstance(retval, int) else 0
 
     def get_ports_by_target(
         self,
         target_name: str,
     ) -> __builtins__.set[str]:
+        """Return port names that contain channels bound to the target."""
         channels = self.get_channels_by_target(target_name)
-        return {
-            str(
-                {channel: port for channel, port in self._relation_channel_port}[_][
-                    "port_name"
-                ]
-            )
-            for _ in channels
-        }
+        channel_port_map = dict(self._relation_channel_port)
+        return {str(channel_port_map[channel]["port_name"]) for channel in channels}
 
     def get_port_numbers_by_target(
         self,
         target_name: str,
     ) -> __builtins__.set[Quel1PortType]:
+        """Return physical port identifiers for the target."""
         return {
             self._port_settings[ports].port
             for ports in self.get_ports_by_target(target_name)
@@ -305,6 +369,7 @@ class SystemConfigDatabase:
         self,
         target_name: str,
     ) -> __builtins__.set[str]:
+        """Return box names that host channels for the target."""
         ports = self.get_ports_by_target(target_name)
         return {self._port_settings[port].box_name for port in ports}
 
@@ -313,12 +378,15 @@ class SystemConfigDatabase:
         box_name: str,
         ipaddr_wss: str,
         boxtype: str,
-        ipaddr_sss: Optional[str] = None,
-        ipaddr_css: Optional[str] = None,
-        config_root: Optional[str] = None,
-        config_options: MutableSequence[Quel1ConfigOption] = [],
+        ipaddr_sss: str | None = None,
+        ipaddr_css: str | None = None,
+        config_root: str | None = None,
+        config_options: MutableSequence[Quel1ConfigOption] | None = None,
         adapter: str | None = None,
     ) -> dict[str, object]:
+        """Define and store a box setting, then return it as a dictionary."""
+        if config_options is None:
+            config_options = []
         box_setting = BoxSetting(
             box_name=box_name,
             ipaddr_wss=ipaddr_wss,
@@ -339,6 +407,7 @@ class SystemConfigDatabase:
         channel_number: int,
         ndelay_or_nwait: int = 0,
     ) -> None:
+        """Define a logical channel and update delay/wait settings."""
         self._relation_channel_port.append(
             (
                 channel_name,
@@ -364,15 +433,17 @@ class SystemConfigDatabase:
         port_name: str,
         box_name: str,
         port_number: Quel1PortType,
-        lo_freq: Optional[float] = None,
-        cnco_freq: Optional[float] = None,
+        lo_freq: float | None = None,
+        cnco_freq: float | None = None,
         sideband: str = DEFAULT_SIDEBAND,
         vatt: int = 0x800,
-        fnco_freq: Optional[
-            tuple[float] | tuple[float, float] | tuple[float, float, float]
-        ] = None,
+        fnco_freq: tuple[float]
+        | tuple[float, float]
+        | tuple[float, float, float]
+        | None = None,
         # ndelay_or_nwait: tuple[int, ...] = [],
     ) -> None:
+        """Define or update a port configuration entry."""
         if port_name in self._port_settings:
             ndelay_or_nwait = self._port_settings[port_name].ndelay_or_nwait
         else:
@@ -394,6 +465,7 @@ class SystemConfigDatabase:
         box_name: str,
         reconnect: bool = True,
     ) -> Quel1BoxWithRawWss:
+        """Create and optionally reconnect a `Quel1Box` instance."""
         s = self._box_settings[box_name]
         box = Quel1BoxWithRawWss.create(
             ipaddr_wss=str(s.ipaddr_wss),
@@ -404,7 +476,7 @@ class SystemConfigDatabase:
         )
         register_box(box)
         if reconnect:
-            if not all([_ for _ in box.link_status().values()]):
+            if not all(box.link_status().values()):
                 box.relinkup(use_204b=False, background_noise_threshold=350)
             status = box.reconnect()
             for mxfe_idx, _ in status.items():
@@ -417,6 +489,7 @@ class SystemConfigDatabase:
     def create_named_box(
         self, box_name: str, *, reconnect: bool = True
     ) -> direct.NamedBox:
+        """Create a named box wrapper from configured settings."""
         return direct.NamedBox(
             name=box_name,
             box=self.create_box(
@@ -429,9 +502,9 @@ class SystemConfigDatabase:
         self,
         *box_names: str,
     ) -> direct.Quel1System:
+        """Create and initialize a `Quel1System` for the given boxes."""
         if self._clockmaster_setting is None:
             raise ValueError("clock master is not found")
-            # TODO : ここは例外を投げるのではなく、 None を設定するようにし，　single box モードを設ける?
         system = direct.Quel1System.create(
             clockmaster=QuBEMasterClient(str(self._clockmaster_setting.ipaddr)),
             boxes=[self.create_named_box(b, reconnect=True) for b in box_names],
@@ -441,7 +514,8 @@ class SystemConfigDatabase:
         return system
 
     def refresh_quel1system(self, system: direct.Quel1System) -> direct.Quel1System:
-        # clockmaster と boxes は再利用する
+        """Update runtime timing fields on an existing `Quel1System`."""
+        # Reuse existing clockmaster and box instances.
         system.trigger = self.trigger
         for box_name, timing_shift in self.timing_shift.items():
             system.timing_shift[box_name] = timing_shift
@@ -449,6 +523,7 @@ class SystemConfigDatabase:
         return system
 
     def asdict(self) -> dict[str, object]:
+        """Serialize the database to a JSON-compatible dictionary."""
         return {
             "clockmaster_setting": self._clockmaster_setting.asdict()
             if self._clockmaster_setting is not None
@@ -466,6 +541,7 @@ class SystemConfigDatabase:
         }
 
     def asjson(self) -> str:
+        """Serialize the database as formatted JSON text."""
         box_settings = {
             box_name: _.asdict() for box_name, _ in self._box_settings.items()
         }
@@ -495,7 +571,8 @@ class SystemConfigDatabase:
         self,
         *,
         box_name: str,
-    ) -> Set[tuple[str, str]]:
+    ) -> builtins.set[tuple[str, str]]:
+        """Return `(target, channel)` pairs hosted by the box."""
         ps = self._port_settings
         port_names = {n for n, s in ps.items() if s.box_name == box_name}
         rcp = self._relation_channel_port
@@ -507,7 +584,8 @@ class SystemConfigDatabase:
     def get_targets_by_box(
         self,
         box_name: str,
-    ) -> Set[tuple[str, str]]:
+    ) -> builtins.set[tuple[str, str]]:
+        """Return `(target, channel)` pairs for a box."""
         return self.get_target_name(box_name=box_name)
 
     def get_target_by_port(
@@ -515,7 +593,8 @@ class SystemConfigDatabase:
         *,
         box_name: str,
         port: int,
-    ) -> Set[tuple[str, str]]:
+    ) -> builtins.set[tuple[str, str]]:
+        """Return `(target, channel)` pairs for a box port."""
         return self.get_targets_by_port(
             box_name=box_name,
             port=port,
@@ -526,7 +605,8 @@ class SystemConfigDatabase:
         *,
         box_name: str,
         port: int,
-    ) -> Set[tuple[str, str]]:
+    ) -> builtins.set[tuple[str, str]]:
+        """Return `(target, channel)` pairs mapped to a specific port."""
         ps = self._port_settings
         port_names = {
             n for n, s in ps.items() if s.box_name == box_name and s.port == port
@@ -542,7 +622,8 @@ class SystemConfigDatabase:
         box_name: str,
         port: int,
         channel: int,
-    ) -> Set[str]:
+    ) -> builtins.set[str]:
+        """Return all targets mapped to a specific channel."""
         relation_target_channel = self.get_targets_by_port(box_name=box_name, port=port)
         channels = {c for _, c in relation_target_channel}
         if not channels:
@@ -555,8 +636,10 @@ class SystemConfigDatabase:
                 for c, p in self._relation_channel_port
                 if c in channels
             }[channel]
-        except KeyError:
-            raise ValueError(f"invalid channel number {box_name, port, channel}")
+        except KeyError as err:
+            raise ValueError(
+                f"invalid channel number {box_name, port, channel}"
+            ) from err
         targets = {t for t, c in relation_target_channel if c == channel_id}
         if not targets:
             raise ValueError(
@@ -570,6 +653,7 @@ class SystemConfigDatabase:
         port: int,
         channel: int,
     ) -> str:
+        """Return a single target mapped to a specific channel."""
         relation_target_channel = self.get_target_by_port(box_name=box_name, port=port)
         channels = {c for t, c in relation_target_channel}
         if not channels:
@@ -582,8 +666,10 @@ class SystemConfigDatabase:
                 for c, p in self._relation_channel_port
                 if c in channels
             }[channel]
-        except KeyError:
-            raise ValueError(f"invalid channel number {box_name, port, channel}")
+        except KeyError as err:
+            raise ValueError(
+                f"invalid channel number {box_name, port, channel}"
+            ) from err
         targets = {t for t, c in relation_target_channel if c == channel_id}
         if not targets:
             raise ValueError(
@@ -594,29 +680,35 @@ class SystemConfigDatabase:
 
 @dataclass
 class ClockmasterSetting:
+    """Clockmaster connection settings."""
+
     ipaddr: str | IPv4Address | IPv6Address
     reset: bool
 
     def asdict(self) -> dict[str, object]:
+        """Return the setting as a dictionary."""
         return asdict(self)
 
 
 @dataclass
 class BoxSetting:
+    """Connection and type settings for one hardware box."""
+
     box_name: str
     ipaddr_wss: str | IPv4Address | IPv6Address
     boxtype: Quel1BoxType
-    ipaddr_sss: Optional[str | IPv4Address | IPv6Address] = None
-    ipaddr_css: Optional[str | IPv4Address | IPv6Address] = None
-    config_root: Optional[str | os.PathLike] = None
+    ipaddr_sss: str | IPv4Address | IPv6Address | None = None
+    ipaddr_css: str | IPv4Address | IPv6Address | None = None
+    config_root: str | os.PathLike | None = None
     config_options: MutableSequence[Quel1ConfigOption] = field(default_factory=list)
     adapter: str | None = None
 
     def __post_init__(self) -> None:
+        """Normalize and validate configured IP addresses."""
         if isinstance(self.ipaddr_wss, str):
             self.ipaddr_wss = ip_address(self.ipaddr_wss)
         elif not isinstance(self.ipaddr_wss, (IPv4Address, IPv6Address)):
-            raise ValueError("ipaddr_wss should be instance of IPvxAddress")
+            raise TypeError("ipaddr_wss should be instance of IPvxAddress")
 
         if self.ipaddr_sss is None:
             self.ipaddr_sss = self.ipaddr_wss + (1 << 16)
@@ -635,6 +727,7 @@ class BoxSetting:
         self.config_options = []
 
     def asdict(self) -> dict[str, Any]:
+        """Return a JSON-friendly dictionary representation."""
         return {
             "ipaddr_wss": str(self.ipaddr_wss),
             "ipaddr_sss": str(self.ipaddr_sss),
@@ -648,6 +741,7 @@ class BoxSetting:
         }
 
     def asjsonable(self) -> dict[str, Any]:
+        """Return a dictionary with serialized enum aliases."""
         dct = self.asdict()
         dct["boxtype"] = {v: k for k, v in QUEL1_BOXTYPE_ALIAS.items()}[dct["boxtype"]]
         return dct
@@ -655,17 +749,20 @@ class BoxSetting:
 
 @dataclass
 class PortSetting:
+    """Frequency and timing settings for a logical port."""
+
     port_name: str
     box_name: str
     port: Quel1PortType
-    lo_freq: Optional[float] = None  # will be obsolete
-    cnco_freq: Optional[float] = None  # will be obsolete
+    lo_freq: float | None = None  # will be obsolete
+    cnco_freq: float | None = None  # will be obsolete
     sideband: str = DEFAULT_SIDEBAND  # will be obsolete
     vatt: int = 0x800  # will be obsolete
-    fnco_freq: Optional[tuple[float, ...]] = None  # will be obsolete
+    fnco_freq: tuple[float, ...] | None = None  # will be obsolete
     ndelay_or_nwait: tuple[int, ...] = ()
 
     def asdict(self) -> dict[str, object]:
+        """Return a compact dictionary representation."""
         return {
             "port_name": self.port_name,
             "box_name": self.box_name,

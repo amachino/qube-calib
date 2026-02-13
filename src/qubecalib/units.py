@@ -1,3 +1,5 @@
+"""Unit constants used by qubecalib calculations."""
+
 from typing import Final
 
 import numpy as np

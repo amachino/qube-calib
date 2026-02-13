@@ -1,12 +1,13 @@
+"""Compatibility converters between legacy e7 and `quel_ic_config` types."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 import numpy as np
 import numpy.typing as npt
-from quel_ic_config import AwgParam, CapIqDataReader, CapParam, CapSection, WaveChunk
-
 from qubecalib.e7compat import CaptureParam, DspUnit, WaveSequence
+from quel_ic_config import AwgParam, CapIqDataReader, CapParam, CapSection, WaveChunk
 
 
 @dataclass(frozen=True)

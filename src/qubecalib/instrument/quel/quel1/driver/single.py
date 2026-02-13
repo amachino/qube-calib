@@ -1,46 +1,63 @@
+"""Direct driver primitives for single-box execution."""
+
 from __future__ import annotations
 
 from collections import defaultdict
 from types import MappingProxyType
-from typing import Any, Final, NamedTuple, Union, cast
+from typing import Any, Final, Literal, NamedTuple, TypeAlias, cast
 
 import numpy as np
 import numpy.typing as npt
+from qubecalib.e7compat import CaptureParam, WaveSequence
 from quel_ic_config import Quel1Box
 from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
 
-from qubecalib.e7compat import CaptureParam, WaveSequence
 from .compat import convert_captureparam, convert_wavesequence, reader_to_flat_wave
 
-Quel1PortType = Union[int, tuple[int, int]]
+Quel1PortType: TypeAlias = int | tuple[int, int]
+_TriggeredCaptureKey: TypeAlias = Literal["__triggered__"]
+CaptureFutureKey: TypeAlias = Quel1PortType | _TriggeredCaptureKey
+_TRIGGERED_CAPTURE_KEY: Final[_TriggeredCaptureKey] = "__triggered__"
 
 
 class AwgId(NamedTuple):
+    """AWG identifier within a box."""
+
     port: Quel1PortType
     channel: int
 
 
 class AwgSetting(NamedTuple):
+    """AWG programming setting."""
+
     awg: AwgId
     wseq: WaveSequence
 
 
 class RunitId(NamedTuple):
+    """Capture runit identifier within a box."""
+
     port: Quel1PortType
     runit: int
 
 
 class RunitSetting(NamedTuple):
+    """Capture runit programming setting."""
+
     runit: RunitId
     cprm: CaptureParam
 
 
 class TriggerSetting(NamedTuple):
-    trigger_awg: AwgId  # port, channel
+    """Mapping from trigger destination port to AWG source."""
+
+    trigger_awg: AwgId
     triggerd_port: Quel1PortType
 
 
 class Action:
+    """Executable direct action for one box."""
+
     def __init__(
         self,
         box: Quel1Box,
@@ -60,10 +77,25 @@ class Action:
         box: Quel1Box,
         settings: list[RunitSetting | AwgSetting | TriggerSetting],
     ) -> Action:
+        """
+        Build and load an action from settings.
+
+        Parameters
+        ----------
+        box : Quel1Box
+            Box target.
+        settings : list[RunitSetting | AwgSetting | TriggerSetting]
+            Direct-driver settings.
+
+        Returns
+        -------
+        Action
+            Loaded action object.
+        """
         wseqs, cprms, triggers = cls.parse_settings(settings)
-        self = cls(box, wseqs, cprms, triggers)
-        self._load_to_device()
-        return self
+        action = cls(box, wseqs, cprms, triggers)
+        action._load_to_device()
+        return action
 
     @staticmethod
     def parse_settings(
@@ -73,46 +105,52 @@ class Action:
         MappingProxyType[RunitId, CaptureParam],
         MappingProxyType[Quel1PortType, AwgId],
     ]:
-        # ValueError 1
+        """
+        Validate and split settings into AWG/Capture/Trigger maps.
+
+        Parameters
+        ----------
+        settings : list[RunitSetting | AwgSetting | TriggerSetting]
+            Direct-driver settings.
+
+        Returns
+        -------
+        tuple[MappingProxyType[AwgId, WaveSequence], MappingProxyType[RunitId, CaptureParam], MappingProxyType[Quel1PortType, AwgId]]
+            Parsed setting maps.
+        """
         if not settings:
             raise ValueError("no settings provided")
-        wseqs, cprms, triggers = {}, {}, {}
+
+        wseqs: dict[AwgId, WaveSequence] = {}
+        cprms: dict[RunitId, CaptureParam] = {}
+        triggers: dict[Quel1PortType, AwgId] = {}
         for setting in settings:
             if isinstance(setting, AwgSetting):
                 wseqs[setting.awg] = setting.wseq
             elif isinstance(setting, RunitSetting):
-                cprms[setting.runit] = cast(RunitSetting, setting).cprm
+                cprms[setting.runit] = setting.cprm
             elif isinstance(setting, TriggerSetting):
                 triggers[setting.triggerd_port] = setting.trigger_awg
             else:
-                raise ValueError(f"unsupported setting: {setting}")
-        # wseqs, cprms, triggers
-        # False, False, False -> ValueError 1
-        # True,  False, False
-        # False, True,  False
-        # True,  True,  False -> ValueError 2
-        # False, False, True  -> ValueError 3
-        # True,  False, True  -> ValueError 3
-        # False, True,  True  -> ValueError 4
-        # True,  True,  True
-        # ValueError 2
-        if all([bool(wseqs), bool(cprms), not bool(triggers)]):
+                raise TypeError(f"unsupported setting: {setting}")
+
+        if wseqs and cprms and not triggers:
             raise ValueError("both wseqs and cprms are provided without triggers")
+
         if triggers:
             cap_ports = {runit.port for runit in cprms}
             for port in triggers:
-                # ValueError 3
                 if port not in cap_ports:
                     raise ValueError(
                         f"triggerd port {port} is not provided in runit settings"
                     )
             awgs = set(wseqs.keys())
             for port, awg in triggers.items():
-                # ValueError 4
                 if awg not in awgs:
                     raise ValueError(
                         f"trigger {awg} for triggerd port {port} is not provided"
                     )
+
         return (
             MappingProxyType(wseqs),
             MappingProxyType(cprms),
@@ -120,6 +158,7 @@ class Action:
         )
 
     def _load_to_device(self) -> None:
+        """Convert and apply AWG/capture settings to the target box."""
         for awg, wseq in self._wseqs.items():
             converted = convert_wavesequence(
                 wseq,
@@ -145,12 +184,17 @@ class Action:
                 capture_param=convert_captureparam(cprm),
             )
 
-    def capture_start(
-        self,
-    ) -> dict[Quel1PortType, Any]:
-        # _trigger が _channels に含まれていなければ capm が tigger を待ち続けてしまうのでこれを防ぐ
-        channels = {awg for awg in self._wseqs}
-        runits_by_ports = defaultdict(list)
+    def capture_start(self) -> dict[CaptureFutureKey, Any]:
+        """
+        Start capture tasks according to capture/trigger settings.
+
+        Returns
+        -------
+        dict[CaptureFutureKey, Any]
+            Future map keyed by capture port or a trigger sentinel key.
+        """
+        channels = set(self._wseqs)
+        runits_by_ports: dict[Quel1PortType, list[int]] = defaultdict(list)
         for runit in self._cprms:
             runits_by_ports[runit.port].append(runit.runit)
         for port, trigger in self._triggers.items():
@@ -162,50 +206,73 @@ class Action:
                 raise ValueError(
                     f"triggerd port {port} is not provided in runit settings"
                 )
-        if runits_by_ports:
-            if self._triggers:
-                channels = {(awg.port, awg.channel) for awg in self._wseqs}
-                runits = {
-                    (port, runit)
-                    for port, runits_ in runits_by_ports.items()
-                    for runit in runits_
-                }
-                cap_task, gen_task = self._box.start_capture_by_awg_trigger(
-                    runits=runits,
-                    channels=channels,
-                )
-                return {"__triggered__": (cap_task, gen_task)}
-            return {
-                port: self._box.start_capture_now(
-                    {(port, runit) for runit in runits},
-                )
-                for port, runits in runits_by_ports.items()
-            }
-        else:
+
+        if not runits_by_ports:
             return {}
 
+        if self._triggers:
+            channel_specs = {(awg.port, awg.channel) for awg in self._wseqs}
+            runits = {
+                (port, runit)
+                for port, runits_ in runits_by_ports.items()
+                for runit in runits_
+            }
+            cap_task, gen_task = self._box.start_capture_by_awg_trigger(
+                runits=runits,
+                channels=channel_specs,
+            )
+            return {_TRIGGERED_CAPTURE_KEY: (cap_task, gen_task)}
+
+        return {
+            port: self._box.start_capture_now(
+                {(port, runit) for runit in runits},
+            )
+            for port, runits in runits_by_ports.items()
+        }
+
     def start_emission(self) -> None:
-        awg_specs = set([(s.port, s.channel) for s in self._wseqs])
-        if awg_specs:  # _channels が空の場合は AWG は起動しない
+        """Start wave generation when AWG settings exist."""
+        awg_specs = {(awg.port, awg.channel) for awg in self._wseqs}
+        if awg_specs:
             task = self._box.start_wavegen(awg_specs)
             task.result()
 
     def capture_stop(
-        self, futures: dict[Quel1PortType, Any]
+        self,
+        futures: dict[CaptureFutureKey, Any],
     ) -> tuple[
         dict[Quel1PortType, CaptureReturnCode],
         dict[tuple[Quel1PortType, int], npt.NDArray[np.complex64]],
     ]:
-        status, data = {}, {}
-        if "__triggered__" in futures:
-            cap_task, gen_task = futures["__triggered__"]
+        """
+        Resolve capture futures and return status/data maps.
+
+        Parameters
+        ----------
+        futures : dict[CaptureFutureKey, Any]
+            Futures returned by `capture_start`.
+
+        Returns
+        -------
+        tuple[dict[Quel1PortType, CaptureReturnCode], dict[tuple[Quel1PortType, int], NDArray[np.complex64]]]
+            Flattened status and IQ data maps.
+        """
+        status: dict[Quel1PortType, CaptureReturnCode] = {}
+        data: dict[tuple[Quel1PortType, int], npt.NDArray[np.complex64]] = {}
+
+        triggered_futures = futures.get(_TRIGGERED_CAPTURE_KEY)
+        if triggered_futures is not None:
+            cap_task, gen_task = cast(tuple[Any, Any], triggered_futures)
             readers = cap_task.result()
             gen_task.result()
             for (port, runit), reader in readers.items():
                 status[port] = CaptureReturnCode.SUCCESS
                 data[(port, runit)] = reader_to_flat_wave(reader)
             return status, data
+
         for port, future in futures.items():
+            if port == _TRIGGERED_CAPTURE_KEY:
+                continue
             readers = future.result()
             status[port] = CaptureReturnCode.SUCCESS
             for (_, runit), reader in readers.items():
@@ -218,27 +285,69 @@ class Action:
         dict[Quel1PortType, CaptureReturnCode],
         dict[tuple[Quel1PortType, int], npt.NDArray[np.complex64]],
     ]:
-        # wseqs, cprms, triggers
-        # True,  False, False -> AWG only
-        # False, True,  False -> Capture only
-        # True,  True,  True  -> Triggered Capture
-        # Triggered Capture
-        if all([bool(self._wseqs), bool(self._cprms), bool(self._triggers)]):
+        """
+        Execute one action cycle and return capture results.
+
+        Returns
+        -------
+        tuple[dict[Quel1PortType, CaptureReturnCode], dict[tuple[Quel1PortType, int], NDArray[np.complex64]]]
+            Flattened status and IQ data maps.
+        """
+        if self._wseqs and self._cprms and self._triggers:
             futures = self.capture_start()
             return self.capture_stop(futures)
-        # Awg only
-        elif all([bool(self._wseqs), not bool(self._cprms), not bool(self._triggers)]):
+        if self._wseqs and not self._cprms and not self._triggers:
             self.start_emission()
             return {}, {}
-        # Capture only
-        elif all([not bool(self._wseqs), bool(self._cprms), not bool(self._triggers)]):
+        if not self._wseqs and self._cprms and not self._triggers:
             futures = self.capture_start()
             return self.capture_stop(futures)
-        else:
-            raise ValueError("unsupported action")  # 基本的には起こらないはず
+        raise ValueError("unsupported action")
 
-    # box を変更されたくないので getter を用意し setter は用意しない
-    # 細かな制御は直接 box を操作することで行う
     @property
     def box(self) -> Quel1Box:
+        """
+        Return the target box.
+
+        Returns
+        -------
+        Quel1Box
+            Box used for this action.
+        """
         return self._box
+
+    @property
+    def wave_sequences(self) -> MappingProxyType[AwgId, WaveSequence]:
+        """
+        Return registered AWG wave-sequence settings.
+
+        Returns
+        -------
+        MappingProxyType[AwgId, WaveSequence]
+            Read-only AWG setting map.
+        """
+        return self._wseqs
+
+    @property
+    def capture_params(self) -> MappingProxyType[RunitId, CaptureParam]:
+        """
+        Return registered capture-parameter settings.
+
+        Returns
+        -------
+        MappingProxyType[RunitId, CaptureParam]
+            Read-only capture setting map.
+        """
+        return self._cprms
+
+    @property
+    def trigger_settings(self) -> MappingProxyType[Quel1PortType, AwgId]:
+        """
+        Return trigger mappings.
+
+        Returns
+        -------
+        MappingProxyType[Quel1PortType, AwgId]
+            Read-only trigger map.
+        """
+        return self._triggers

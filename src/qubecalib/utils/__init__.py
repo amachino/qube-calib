@@ -1,3 +1,5 @@
+"""Utility helpers for qubecalib."""
+
 from .pca import pca, principal_axis_rotation
 
 __all__ = [
