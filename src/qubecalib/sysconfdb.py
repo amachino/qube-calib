@@ -13,8 +13,8 @@ import yaml
 from quel_clock_master import QuBEMasterClient
 from quel_ic_config import (
     QUEL1_BOXTYPE_ALIAS,
+    Quel1Box,
     Quel1BoxType,
-    Quel1BoxWithRawWss,
     Quel1ConfigOption,
 )
 
@@ -24,6 +24,8 @@ from .instrument.quel.quel1.driver import Quel1PortType
 DEFAULT_SIDEBAND = "U"
 
 logger = logging.getLogger(__name__)
+
+Quel1BoxWithRawWss = Quel1Box
 
 
 class SystemConfigDatabase:

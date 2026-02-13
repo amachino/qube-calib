@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime
-from concurrent.futures import Future
 from logging import getLogger
 from types import MappingProxyType
 from typing import Any, Final, MutableSequence, NamedTuple, Optional, cast
@@ -9,7 +8,8 @@ from typing import Any, Final, MutableSequence, NamedTuple, Optional, cast
 import numpy as np
 import numpy.typing as npt
 from quel_clock_master import QuBEMasterClient, SequencerClient
-from quel_ic_config import CaptureReturnCode, Quel1BoxWithRawWss
+from quel_ic_config import Quel1Box
+from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
 
 from . import single
 from .single import Quel1PortType
@@ -19,7 +19,7 @@ logger = getLogger(__name__)
 
 class NamedBox(NamedTuple):
     name: str
-    box: Quel1BoxWithRawWss
+    box: Quel1Box
 
 
 class BoxSetting(NamedTuple):
@@ -31,10 +31,10 @@ class Quel1System:
     def __init__(
         self,
         clockmaster: QuBEMasterClient,
-        boxes: MappingProxyType[str, Quel1BoxWithRawWss],
+        boxes: MappingProxyType[str, Quel1Box],
     ) -> None:
         self._clockmaster: Final[QuBEMasterClient] = clockmaster
-        self._boxes: Final[MappingProxyType[str, Quel1BoxWithRawWss]] = boxes
+        self._boxes: Final[MappingProxyType[str, Quel1Box]] = boxes
         self.displacement: int = 0
         self.timing_shift: Final[dict[str, int]] = {
             b: 0 for b in boxes
@@ -51,7 +51,7 @@ class Quel1System:
         cls,
         *,
         clockmaster: QuBEMasterClient,
-        boxes: list[Quel1BoxWithRawWss | NamedBox],
+        boxes: list[Quel1Box | NamedBox],
         update_copnfig_cache: bool = True,
     ) -> Quel1System:
         boxes_dict = {}
@@ -59,18 +59,18 @@ class Quel1System:
             if isinstance(box, NamedBox):
                 boxes_dict[box.name] = box.box
             else:
-                boxes_dict[box._dev.wss._wss_addr] = box
+                boxes_dict[box.wss.ipaddr_wss] = box
         self = cls(clockmaster, MappingProxyType(boxes_dict))
         if update_copnfig_cache:
             self.update_config_cache()
         return self
 
     @property
-    def boxes(self) -> MappingProxyType[str, Quel1BoxWithRawWss]:
+    def boxes(self) -> MappingProxyType[str, Quel1Box]:
         return self._boxes
 
     @property
-    def box(self) -> MappingProxyType[str, Quel1BoxWithRawWss]:
+    def box(self) -> MappingProxyType[str, Quel1Box]:
         return self._boxes
 
     def read_clock(self, *box_names: str) -> MutableSequence[tuple[bool, int, int]]:
@@ -92,7 +92,7 @@ class Quel1System:
         if not box_names:
             box_names = tuple(self.boxes.keys())
         for b in box_names:
-            self.box[b].initialize_all_awgs()
+            self.box[b].initialize_all_awgunits()
             self.box[b].initialize_all_capunits()
 
     def update_config_cache(self, *box_names: str) -> None:
@@ -208,8 +208,8 @@ class Action:
                 for s in box_settings.settings
                 if isinstance(s, single.AwgSetting)
             ]
-            box.prepare_for_emission(awg_ids)
-            current_time, last_sysref_time = box.read_current_and_latched_clock()
+            current_time = box.get_current_timecounter()
+            last_sysref_time = box.get_latest_sysref_timecounter()
             logger.info(
                 f"clock of {name}, current: {current_time}, last sysref: {last_sysref_time}, last sysref offset: {cls._mod_by_sysref(last_sysref_time)}"
             )
@@ -241,13 +241,13 @@ class Action:
     @classmethod
     def _measure_average_offset_at_sysref_clock(
         cls,
-        box: Quel1BoxWithRawWss,
+        box: Quel1Box,
         num_iters: Optional[int] = None,
     ) -> int:
         if num_iters is None:
             num_iters = cls.DEFAULT_NUM_SYSREF_MEASUREMENTS
         offsets = [
-            cls._mod_by_sysref(box.read_current_and_latched_clock()[1])
+            cls._mod_by_sysref(box.get_latest_sysref_timecounter())
             for _ in range(num_iters)
         ]
         return round(sum(offsets) / num_iters)
@@ -270,13 +270,7 @@ class Action:
 
     def capture_start(
         self,
-    ) -> dict[
-        str,
-        dict[
-            Quel1PortType,
-            Future[tuple[CaptureReturnCode, dict[int, npt.NDArray[np.complex64]]]],
-        ],
-    ]:
+    ) -> dict[str, dict[Quel1PortType, Any]]:
         futures = {
             name: action.capture_start()
             for name, action in self._actions.items()
@@ -290,7 +284,7 @@ class Action:
             str,
             dict[
                 Quel1PortType,
-                Future[tuple[CaptureReturnCode, dict[int, npt.NDArray[np.complex64]]]],
+                Any,
             ],
         ],
     ) -> tuple[
@@ -327,13 +321,15 @@ class Action:
     ) -> None:
         for name, action in self._actions.items():
             box = action.box
-            current_time, last_sysref_time = box.read_current_and_latched_clock()
+            current_time = box.get_current_timecounter()
+            last_sysref_time = box.get_latest_sysref_timecounter()
             logger.info(
                 f"sysref offset of {name}: latest: {self._mod_by_sysref(last_sysref_time)}"
             )
 
         box = self._quel1system.box[self._reference_box_name]
-        current_time, last_sysref_time = box.read_current_and_latched_clock()
+        current_time = box.get_current_timecounter()
+        last_sysref_time = box.get_latest_sysref_timecounter()
         logger.info(
             f"sysref offset of reference box {self._reference_box_name}: average: {self._ref_sysref_time_offset},  latest: {self._mod_by_sysref(last_sysref_time)}"
         )
@@ -361,9 +357,14 @@ class Action:
         timing_shift = (
             self._quel1system.timing_shift
         )  # key existence is guaranteed by the initialization.
+        tasks = []
         for name, action in self._actions.items():
+            if action._triggers or not action._wseqs:
+                continue
             t = base_time + timediff[name] + timing_shift[name]
-            action.box.reserve_emission(awgs[name], t)
+            tasks.append(action.box.start_wavegen(awgs[name], timecounter=t))
             logger.info(
                 f"reserving emission of {name} at {t} : base_time={base_time}, timediff={timediff[name]}, timing_shift={timing_shift[name]}"
             )
+        for task in tasks:
+            task.result()

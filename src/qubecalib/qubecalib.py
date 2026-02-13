@@ -27,12 +27,14 @@ from e7awgsw import CaptureModule, CaptureParam, DspUnit, WaveSequence
 from quel_clock_master import QuBEMasterClient, SequencerClient
 from quel_ic_config import (
     QUEL1_BOXTYPE_ALIAS,
-    CaptureReturnCode,
+    Quel1Box,
     Quel1BoxType,
-    Quel1BoxWithRawWss,
     Quel1ConfigOption,
 )
+from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
 from typing_extensions import deprecated
+
+Quel1BoxWithRawWss = Quel1Box
 
 from . import __version__, neopulse
 from .e7utils import (
@@ -2249,7 +2251,7 @@ class BoxPool:
     def reset_awg(self) -> None:
         for name, (box, _) in self._boxes.items():
             box.easy_stop_all(control_port_rfswitch=True)
-            box.initialize_all_awgs()
+            box.initialize_all_awgunits()
 
     def get_box(
         self,

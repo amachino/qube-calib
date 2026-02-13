@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from concurrent.futures import Future
 from types import MappingProxyType
-from typing import Final, NamedTuple, Optional, Union, cast
+from typing import Any, Final, NamedTuple, Union, cast
 
 import numpy as np
 import numpy.typing as npt
 from e7awgsw import CaptureParam, WaveSequence
-from quel_ic_config import CaptureReturnCode, Quel1BoxWithRawWss, Quel1WaveSubsystem
+from quel_ic_config import Quel1Box
+from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
+
+from .compat import convert_captureparam, convert_wavesequence, reader_to_flat_wave
 
 Quel1PortType = Union[int, tuple[int, int]]
 
@@ -41,12 +43,12 @@ class TriggerSetting(NamedTuple):
 class Action:
     def __init__(
         self,
-        box: Quel1BoxWithRawWss,
+        box: Quel1Box,
         wseqs: MappingProxyType[AwgId, WaveSequence],
         cprms: MappingProxyType[RunitId, CaptureParam],
         triggers: MappingProxyType[Quel1PortType, AwgId],
     ) -> None:
-        self._box: Final[Quel1BoxWithRawWss] = box
+        self._box: Final[Quel1Box] = box
         self._wseqs: Final[MappingProxyType[AwgId, WaveSequence]] = wseqs
         self._cprms: Final[MappingProxyType[RunitId, CaptureParam]] = cprms
         self._triggers: Final[MappingProxyType[Quel1PortType, AwgId]] = triggers
@@ -55,14 +57,12 @@ class Action:
     def build(
         cls,
         *,
-        box: Quel1BoxWithRawWss,
+        box: Quel1Box,
         settings: list[RunitSetting | AwgSetting | TriggerSetting],
     ) -> Action:
         wseqs, cprms, triggers = cls.parse_settings(settings)
         self = cls(box, wseqs, cprms, triggers)
         self._load_to_device()
-        awgs = set([(s.port, s.channel) for s in self._wseqs])
-        box.prepare_for_emission(awgs)
         return self
 
     @staticmethod
@@ -121,26 +121,33 @@ class Action:
 
     def _load_to_device(self) -> None:
         for awg, wseq in self._wseqs.items():
+            converted = convert_wavesequence(
+                wseq,
+                name_prefix=f"p{awg.port}_c{awg.channel}",
+            )
+            for name, iq in converted.wavedata.items():
+                self.box.register_wavedata(
+                    port=awg.port,
+                    channel=awg.channel,
+                    name=name,
+                    iq=iq,
+                    allow_update=True,
+                )
             self.box.config_channel(
                 port=awg.port,
                 channel=awg.channel,
-                wave_param=wseq,
+                awg_param=converted.awg_param,
             )
         for runit, cprm in self._cprms.items():
             self.box.config_runit(
                 port=runit.port,
                 runit=runit.runit,
-                capture_param=cprm,
+                capture_param=convert_captureparam(cprm),
             )
 
     def capture_start(
         self,
-        *,
-        timeout: Optional[float] = None,
-    ) -> dict[
-        Quel1PortType,
-        Future[tuple[CaptureReturnCode, dict[int, npt.NDArray[np.complex64]]]],
-    ]:
+    ) -> dict[Quel1PortType, Any]:
         # _trigger が _channels に含まれていなければ capm が tigger を待ち続けてしまうのでこれを防ぐ
         channels = {awg for awg in self._wseqs}
         runits_by_ports = defaultdict(list)
@@ -155,20 +162,22 @@ class Action:
                 raise ValueError(
                     f"triggerd port {port} is not provided in runit settings"
                 )
-        if timeout is None:
-            timeout = Quel1WaveSubsystem.DEFAULT_CAPTURE_TIMEOUT
         if runits_by_ports:
+            if self._triggers:
+                channels = {(awg.port, awg.channel) for awg in self._wseqs}
+                runits = {
+                    (port, runit)
+                    for port, runits_ in runits_by_ports.items()
+                    for runit in runits_
+                }
+                cap_task, gen_task = self._box.start_capture_by_awg_trigger(
+                    runits=runits,
+                    channels=channels,
+                )
+                return {"__triggered__": (cap_task, gen_task)}
             return {
-                port: self._box.capture_start(
-                    port,
-                    runits,
-                    triggering_channel=(
-                        self._triggers[port].port,
-                        self._triggers[port].channel,
-                    )
-                    if port in self._triggers
-                    else None,
-                    timeout=timeout,
+                port: self._box.start_capture_now(
+                    {(port, runit) for runit in runits},
                 )
                 for port, runits in runits_by_ports.items()
             }
@@ -178,20 +187,29 @@ class Action:
     def start_emission(self) -> None:
         awg_specs = set([(s.port, s.channel) for s in self._wseqs])
         if awg_specs:  # _channels が空の場合は AWG は起動しない
-            self._box.start_emission(awg_specs)
+            task = self._box.start_wavegen(awg_specs)
+            task.result()
 
     def capture_stop(
-        self, futures: dict[Quel1PortType, Future]
+        self, futures: dict[Quel1PortType, Any]
     ) -> tuple[
         dict[Quel1PortType, CaptureReturnCode],
         dict[tuple[Quel1PortType, int], npt.NDArray[np.complex64]],
     ]:
         status, data = {}, {}
+        if "__triggered__" in futures:
+            cap_task, gen_task = futures["__triggered__"]
+            readers = cap_task.result()
+            gen_task.result()
+            for (port, runit), reader in readers.items():
+                status[port] = CaptureReturnCode.SUCCESS
+                data[(port, runit)] = reader_to_flat_wave(reader)
+            return status, data
         for port, future in futures.items():
-            capt_return_code, runit_data = future.result()
-            status[port] = capt_return_code
-            for runit, d in runit_data.items():
-                data[(port, runit)] = d
+            readers = future.result()
+            status[port] = CaptureReturnCode.SUCCESS
+            for (_, runit), reader in readers.items():
+                data[(port, runit)] = reader_to_flat_wave(reader)
         return status, data
 
     def action(
@@ -223,5 +241,5 @@ class Action:
     # box を変更されたくないので getter を用意し setter は用意しない
     # 細かな制御は直接 box を操作することで行う
     @property
-    def box(self) -> Quel1BoxWithRawWss:
+    def box(self) -> Quel1Box:
         return self._box
