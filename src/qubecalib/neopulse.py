@@ -55,23 +55,16 @@ class SequenceTree:
         return self._latest_node
 
     def branch(self, branch: Branch) -> Branch:
-        # 枝分かれの開始点を退避する
         """Execute branch."""
         branched_node = self._active_node
-        # blanch を木構造に追加する
         self.append(branch)
-        # 枝分かれ終了後の復帰点を退避する
         branch._next_node = self._active_node
-        # 枝分かれの開始点を木構造に教える
         self._active_node = branched_node
-        # 枝分かれの開始点に Dummy を追加する
         branch_root = self.append(Dummy())
-        # branch 以下の最長経路を計算するための開始点を branch に教える
         branch._root_node = branch_root
         return branch
 
     def place_slots(self) -> None:
-        # 深い branch から順に slot を配置する
         """Execute place slots."""
         branch_items = [
             self._nodes_items[node]
@@ -83,8 +76,6 @@ class SequenceTree:
                 raise TypeError("branch item must be Branch")
             branch_item.place(self)
 
-        # 最終的な slot 配置を確定する（SubSequenceを必ず Toplevel に置くなら必要ないかも？）
-        # 各アイテムのコストを更新する
         for node, item in self._nodes_items.items():
             self._tree._cost[node] = item.duration
         total_costs = self._tree.evaluate()
@@ -161,12 +152,10 @@ class Branch(Item):
         self._root_node: int | None = None
 
     def place(self, tree: SequenceTree) -> None:
-        # 最大長を計算する
         """Execute place."""
         for _ in tree.breadth_first_search(self._root_node)[1:]:
             tree._tree._cost[_] = tree._nodes_items[_].duration
         max_duration = max(list(tree._tree.evaluate(self._root_node).values()))
-        # branch の duration は最大長に揃えると同時に cost も確定する
         self.duration = max_duration
         if self._next_node is None:
             raise ValueError("_next_node is None")
@@ -262,31 +251,23 @@ class Sequence(DequeWithContext):
             SubSequence.create_tree(tree, item)
             _items.append(tree)
         for item in _items:
-            # ノード番号を更新してサブツリーをローカルツリーとマージする
-            # TODO この辺は tree で吸収すべき
             _tree = item
-            # 全てのノードを舐めて最大のインデックスを更新する
             all_nodes = self._tree._tree._tree.all
             if all_nodes:
                 offset = max(all_nodes)
             else:
-                # 空なら現在のインデックスは 0
                 offset = 0
             root = _tree._tree._tree.root
-            # サブツリーのアイテムに対して全て
             for parent, children in _tree._tree._tree.items():
                 if parent == root:
-                    # ローカルツリーの active_node にサブツリーの root をぶら下げる
                     self._tree._tree._tree[self._tree._active_node] += [
                         _ + offset for _ in children
                     ]
                 else:
-                    # サブツリーのアイテムをローカルツリーの名前空間に変換して移動する
                     self._tree._tree._tree[parent + offset] = [
                         _ + offset for _ in children
                     ]
                 self._tree._latest_node = max(self._tree._tree._tree.all)
-                # children に Branch がいるか調べる
                 branches = {
                     _tree._nodes_items[_]
                     for _ in children
@@ -300,7 +281,6 @@ class Sequence(DequeWithContext):
                 for branch in branches:
                     if not isinstance(branch, Branch):
                         continue
-                    # branch の _root_node と _next_node を更新する
                     if not isinstance(branch, Branch):
                         continue
                     if branch._root_node is None:
@@ -309,11 +289,8 @@ class Sequence(DequeWithContext):
                         raise ValueError("_next_node is None")
                     branch._root_node += offset
                     branch._next_node += offset
-                # Series Branch なので toplevel に Branch が居たら次のアイテムはその Branch の次にぶら下げる
-                # toplevel 以外なら次のアイテムの処理へ
                 if parent != root:
                     continue
-                # children に Branch がいるか調べる
                 branches = {
                     _tree._nodes_items[_]
                     for _ in children
@@ -324,14 +301,12 @@ class Sequence(DequeWithContext):
                 }
                 if not branches:
                     continue
-                # Series Branch なので Branch は高々一つ
                 branch = next(iter(branches))
                 if not isinstance(branch, Branch):
                     continue
                 if branch._next_node is None:
                     raise ValueError("_next_node is None")
                 self._tree._active_node = branch._next_node
-            # 全てのアイテムをローカルツリーへ複製する
             for node in _tree.breadth_first_search()[1:]:
                 self._tree._nodes_items[node + offset] = _tree._nodes_items[node]
                 self._tree._tree._cost[node + offset] = -1
@@ -357,13 +332,13 @@ class Sequence(DequeWithContext):
             if sub._next_node is not None
         }
         result: dict[str, dict[int, MutableSequence[Slot]]] = {}
-        for node, item in nodes_items.items():  # Sequence に属する Slot 毎に
+        for node, item in nodes_items.items():
             if not isinstance(item, Slot):
                 continue
             for target in item.targets:
                 if target not in result:
                     result[target] = {}
-                for sub in subsequences:  # 空でない subsequence 毎に
+                for sub in subsequences:
                     if sub._next_node is None:
                         continue
                     if sub._next_node not in result[target]:
@@ -396,26 +371,21 @@ class Sequence(DequeWithContext):
         targets_items: dict[str, dict[int, list[Waveform | Modifier]]],
         sampling_period: float = DEFAULT_SAMPLING_PERIOD,
     ) -> GenSampledSequence:
-        # edge と item の対応マップ
         items: dict[int, MutableSequence[Waveform | Modifier]] = {
             edge: [slot for slot in slots if isinstance(slot, (Waveform, Modifier))]
             for edge, slots in targets_items[target_name].items()
         }
-        # edge と subseq との対応マップ
         edges_items = {
             _: __
             for _, __ in self._tree._nodes_items.items()
             if isinstance(__, SubSequenceBranch)
         }
-        # 空でない（waveform を保持する）subseq の edge_number
         subseq_edges = [edge for edge, _ in items.items() if _]
-        # 空でない subseq のリスト
         subseqs = [
             edges_items[_]
             for _ in subseq_edges
             if isinstance(edges_items[_], SubSequenceBranch)
         ]
-        # subseq のノード
         nodes: list[float] = [0.0]
         for subseq in subseqs:
             if subseq.begin is None or subseq.end is None or subseq.post_blank is None:
@@ -465,7 +435,6 @@ class Sequence(DequeWithContext):
         cls,
         sub_seq_edges__items: dict[int, MutableSequence[Item]],
     ) -> bool:
-        # 各々の subseq 配下の items が Capture のみを含むか 空[] である
         return all(
             not bool(_) or all(isinstance(__, Capture) for __ in _)
             for _ in sub_seq_edges__items.values()
@@ -476,7 +445,6 @@ class Sequence(DequeWithContext):
         cls,
         sub_seq_edges__items: dict[int, MutableSequence[Item]],
     ) -> bool:
-        # 各々の subseq 配下の items が Waveform のみを含むか 空[] である
         return all(
             not bool(_) or all(isinstance(__, Waveform) for __ in _)
             for _ in sub_seq_edges__items.values()
@@ -536,7 +504,6 @@ class Sequence(DequeWithContext):
     ) -> CapSampledSequence:
         edges_items: dict[int, Item] = self._tree._nodes_items
 
-        # waveform を保持する（空でない） subseq の edge_number を begin に対して昇順に並べたもの
         def sort_key(x: int) -> float:
             b = edges_items[x].begin
             if b is None:
@@ -547,13 +514,11 @@ class Sequence(DequeWithContext):
             [edge for edge, _ in targets_items[target_name].items() if _],
             key=sort_key,
         )
-        # waveform を保持する subseq
         subseqs: dict[int, SubSequenceBranch] = {
             edge: _
             for edge, _ in [[edge, edges_items[edge]] for edge in subseq_edges]
             if isinstance(_, SubSequenceBranch) and isinstance(edge, int)
         }
-        # subseq の境界をサンプリング周期にアライメントする（負の無限大へ丸める）
         _subseqs = dict(
             zip(
                 subseq_edges,
@@ -583,7 +548,6 @@ class Sequence(DequeWithContext):
             )
             for subseq_edge in subseq_edges
         }
-        # subseq 毎に slot を含んだ blank と duration の境界 node リストを生成する
         _nodes: dict[int, MutableSequence[float] | MutableSequence] = {
             _: functools.reduce(
                 operator.iadd,
@@ -724,10 +688,8 @@ class Sequence(DequeWithContext):
     def convert_to_sampled_sequence(
         self,
     ) -> tuple[dict[str, GenSampledSequence], dict[str, CapSampledSequence]]:
-        # 念の為 sequence 内の各要素を配置
         """Execute convert to sampled sequence."""
         self._tree.place_slots()
-        # 中間形式に変換
         return self._create_sampled_sequence()
 
 
@@ -767,14 +729,11 @@ class SubSequenceBranch(Branch):
         return f"{self.__class__.__name__}(duration={self.duration}, begin={self.begin}, next_node={self._next_node}, root_node={self._root_node}, post_blank={self.post_blank}, repeats={self.repeats})"
 
     def place(self, tree: SequenceTree) -> None:
-        # 最大長を計算する
         """Execute place."""
         for _ in tree.breadth_first_search(self._root_node)[1:]:
             tree._tree._cost[_] = tree._nodes_items[_].duration
         max_duration = max(list(tree._tree.evaluate(self._root_node).values()))
         self._total_duration_contents = max_duration
-        # branch の duration は最大長に揃えると同時に cost も確定する
-        # SubSequence では全体長を指定することもできてその場合は指定値を優先する
         if self._fixed_duration is None:
             self.duration = max_duration
         else:
@@ -826,9 +785,7 @@ class SubSequence(DequeWithContext):
     ) -> None:
         """Exit the context manager."""
         super().__exit__(exception_type, exception_value, traceback)
-        # このブランチ用のローカルツリーを作る
         tree = SequenceTree()
-        # ツリーの根本にブランチアイテムを作る．このブランチの外のアイテムはこのブランチアイテムの次につながる
         tree.branch(
             SubSequenceBranch(
                 fixed_duration=self._fixed_duration,
@@ -836,45 +793,33 @@ class SubSequence(DequeWithContext):
             )
         )
         SubSequence.create_tree(tree, self)
-        # with 内の定義の所定の位置にツリーを追加
         _rc.contexts[-1].append(tree)
 
     @classmethod
     def create_tree(cls, tree: SequenceTree, items: MutableSequence) -> None:
-        # with 内で定義された item を舐める
         """Execute create tree."""
         for item in items:
             if isinstance(item, Item):
-                # Item ならばそのまま登録
                 slot = item
                 tree.append(slot)
             elif isinstance(item, SequenceTree):
-                # ノード番号を更新してサブツリーをローカルツリーとマージする
-                # TODO この辺は tree で吸収すべき
-                # サブツリーを見つけたらローカルツリーとマージする
                 _tree = item
-                # 全てのローカルノードを舐めて最大のインデックスを更新する
                 all_nodes = tree._tree._tree.all
                 if all_nodes:
                     offset = max(all_nodes)
                 else:
-                    # 空なら現在のインデックスは 0
                     offset = 0
                 root = _tree._tree._tree.root
-                # サブツリーのアイテムに対して全て
                 for parent, children in _tree._tree._tree.items():
                     if parent == root:
-                        # ローカルツリーの active_node にサブツリーの root をぶら下げる
                         tree._tree._tree[tree._active_node] += [
                             _ + offset for _ in children
                         ]
                     else:
-                        # サブツリーのアイテムをローカルツリーの名前空間に変換して移動する
                         tree._tree._tree[parent + offset] = [
                             _ + offset for _ in children
                         ]
                     tree._latest_node = max(tree._tree._tree.all)
-                    # children に Branch がいるか調べる
                     branches = {
                         _tree._nodes_items[_]
                         for _ in children
@@ -888,7 +833,6 @@ class SubSequence(DequeWithContext):
                     for branch in branches:
                         if not isinstance(branch, Branch):
                             continue
-                        # branch の _root_node と _next_node を更新する
                         if not isinstance(branch, Branch):
                             continue
                         if branch._root_node is None:
@@ -897,11 +841,8 @@ class SubSequence(DequeWithContext):
                             raise ValueError("_next_node is None")
                         branch._root_node += offset
                         branch._next_node += offset
-                    # Series Branch なので toplevel に Branch が居たら次のアイテムはその Branch の次にぶら下げる
-                    # toplevel 以外なら次のアイテムの処理へ
                     if parent != root:
                         continue
-                    # children に Branch がいるか調べる
                     branches = {
                         _tree._nodes_items[_]
                         for _ in children
@@ -912,14 +853,12 @@ class SubSequence(DequeWithContext):
                     }
                     if not branches:
                         continue
-                    # Series Branch なので Branch は高々一つ
                     branch = next(iter(branches))
                     if not isinstance(branch, Branch):
                         continue
                     if branch._next_node is None:
                         raise ValueError("_next_node is None")
                     tree._active_node = branch._next_node
-                # 全てのアイテムをローカルツリーへ複製する
                 for node in _tree.breadth_first_search()[1:]:
                     tree._nodes_items[node + offset] = _tree._nodes_items[node]
                     tree._tree._cost[node + offset] = -1
@@ -948,45 +887,31 @@ class Series(DequeWithContext):
     ) -> None:
         """Exit the context manager."""
         super().__exit__(exception_type, exception_value, traceback)
-        # この context 用のローカルツリーを作る
         tree = SequenceTree()
-        # 外側の context にローカルツリーを渡す
         _rc.contexts[-1].append(tree)
-        # ローカルツリーのルート直下を branch して branch item を登録する
         tree.branch(SeriesBranch())
-        # with 内で定義された item を舐める
         for item in self:
             if isinstance(item, Item):
-                # Item ならばそのまま登録
                 slot = item
                 tree.append(slot)
             elif isinstance(item, SequenceTree):
-                # ノード番号を更新してサブツリーをローカルツリーとマージする
-                # TODO この辺は tree で吸収すべき
-                # サブツリーを見つけたらローカルツリーとマージする
                 _tree = item
-                # 全てのローカルノードを舐めて最大のインデックスを更新する
                 all_nodes = tree._tree._tree.all
                 if all_nodes:
                     offset = max(all_nodes)
                 else:
-                    # 空なら現在のインデックスは 0
                     offset = 0
                 root = _tree._tree._tree.root
-                # サブツリーのアイテムに対して全て
                 for parent, children in _tree._tree._tree.items():
                     if parent == root:
-                        # ローカルツリーの active_node にサブツリーの root をぶら下げる
                         tree._tree._tree[tree._active_node] += [
                             _ + offset for _ in children
                         ]
                     else:
-                        # サブツリーのアイテムをローカルツリーの名前空間に変換して移動する
                         tree._tree._tree[parent + offset] = [
                             _ + offset for _ in children
                         ]
                     tree._latest_node = max(tree._tree._tree.all)
-                    # children に Branch がいるか調べる
                     branches = {
                         _tree._nodes_items[_]
                         for _ in children
@@ -1000,7 +925,6 @@ class Series(DequeWithContext):
                     for branch in branches:
                         if not isinstance(branch, Branch):
                             continue
-                        # branch の _root_node と _next_node を更新する
                         if not isinstance(branch, Branch):
                             continue
                         if branch._root_node is None:
@@ -1009,11 +933,8 @@ class Series(DequeWithContext):
                             raise ValueError("_next_node is None")
                         branch._root_node += offset
                         branch._next_node += offset
-                    # Series Branch なので toplevel に Branch が居たら次のアイテムはその Branch の次にぶら下げる
-                    # toplevel 以外なら次のアイテムの処理へ
                     if parent != root:
                         continue
-                    # children に Branch がいるか調べる
                     branches = {
                         _tree._nodes_items[_]
                         for _ in children
@@ -1024,14 +945,12 @@ class Series(DequeWithContext):
                     }
                     if not branches:
                         continue
-                    # Series Branch なので Branch は高々一つ
                     branch = next(iter(branches))
                     if not isinstance(branch, Branch):
                         continue
                     if branch._next_node is None:
                         raise ValueError("_next_node is None")
                     tree._active_node = branch._next_node
-                # 全てのアイテムをローカルツリーへ複製する
                 for node in _tree.breadth_first_search()[1:]:
                     tree._nodes_items[node + offset] = _tree._nodes_items[node]
                     tree._tree._cost[node + offset] = -1
@@ -1059,32 +978,21 @@ class Flushleft(DequeWithContext):
     ) -> None:
         """Exit the context manager."""
         super().__exit__(exception_type, exception_value, traceback)
-        # このブランチ用のサブツリーを作る
         tree = SequenceTree()
-        _rc.contexts[-1].append(tree)  # with 内の定義の所定の位置にツリーを追加
-        # ツリーの根本にブランチアイテムを作る．このブランチの外のアイテムはこのブランチアイテムの次につながる
+        _rc.contexts[-1].append(tree)
         branch = tree.branch(FlushleftBranch())
-        # with 内で定義された item を舐める
         if branch._root_node is None:
             raise ValueError("_root_node is None")
         tree._active_node = branch._root_node
         for item in self:
             if isinstance(item, Item):
-                # Item ならばそのまま登録
-                # ただしパラレルなので注意
                 tree.append(item)
                 if branch._root_node is None:
                     raise ValueError("_root_node is None")
                 tree._active_node = branch._root_node
             elif isinstance(item, SequenceTree):
-                # サブツリーを見つけたら親ツリーとマージする
-                # サブツリーのルート直下第 1 アイテムは branch のはず
-                # サブツリーを抜けたら _branch._root_node に次のアイテムをぶら下げる
                 _tree = item
-                # ツリーをマージするためにノード番号を更新する
                 offset = max(tree._tree._tree.all)
-                # ノード番号を更新してサブツリーをローカルツリーとマージする
-                # TODO この辺は tree で吸収すべき
                 offset = max(tree._tree._tree.all)
                 root = _tree._tree._tree.root
                 for parent, children in _tree._tree._tree.items():
@@ -1106,9 +1014,7 @@ class Flushleft(DequeWithContext):
                         if _item._next_node is None:
                             raise ValueError("_next_node is None")
                         _item._next_node += offset
-                # 親ツリーのカウンターをアップデート
                 tree._latest_node = max(_tree.breadth_first_search()) + offset
-                # 親ツリーの追加先を先頭 branch の次に指定
                 if branch._root_node is None:
                     raise ValueError("_root_node is None")
                 tree._active_node = branch._root_node
@@ -1125,16 +1031,13 @@ class FlushrightBranch(Branch):
             raise ValueError("max_duration is None")
         if self._root_node is None:
             raise ValueError("_root_node is None")
-        # _root_node にぶら下がっている blank node を取得する
         for _ in tree._tree._tree[self._root_node]:
-            # blank にぶら下がっているノードの最大長を取得する
             durations = [
                 value for value in tree._tree.evaluate(_).values() if value is not None
             ]
             if not durations:
                 raise ValueError("branch duration cannot be determined")
             branch_duration = max(durations)
-            # 右揃えになるよう blank を調整するかつ cost も確定する
             tree._nodes_items[_].duration = max_duration - branch_duration
             tree._tree._cost[_] = tree._nodes_items[_].duration
 
@@ -1155,32 +1058,22 @@ class Flushright(DequeWithContext):
     ) -> None:
         """Exit the context manager."""
         super().__exit__(exception_type, exception_value, traceback)
-        # このブランチ用のサブツリーを作る
         tree = SequenceTree()
-        _rc.contexts[-1].append(tree)  # with 内の定義の所定の位置にツリーを追加
-        # ツリーの根本にブランチアイテムを作る．このブランチの外のアイテムはこのブランチアイテムの次につながる
+        _rc.contexts[-1].append(tree)
         branch = tree.branch(FlushrightBranch())
-        # with 内で定義された item を舐める
         for item in self:
             if isinstance(item, Item):
-                # Item ならばそのまま登録
-                # ただしパラレルなので注意
                 tree.append(Padding(0))
                 tree.append(item)
                 if branch._root_node is None:
                     raise ValueError("_root_node is None")
                 tree._active_node = branch._root_node
             elif isinstance(item, SequenceTree):
-                # サブツリーを見つけたら親ツリーとマージする
-                # サブツリーのルート直下第 1 アイテムは branch のはず
-                # サブツリーを抜けたら _branch._root_node に次のアイテムをぶら下げる
                 tree.append(
                     Padding(0)
-                )  # flushright は特別に branch の前に Padding をつける
-                _tree = item  # ローカルの SequenceTree
+                )
+                _tree = item
                 offset = max(tree._tree._tree.all)
-                # ノード番号を更新してサブツリーをローカルツリーとマージする
-                # TODO この辺は tree で吸収すべき
                 offset = max(tree._tree._tree.all)
                 root = _tree._tree._tree.root
                 for parent, children in _tree._tree._tree.items():
@@ -1201,9 +1094,8 @@ class Flushright(DequeWithContext):
                         _item._root_node += offset
                         if _item._next_node is None:
                             raise ValueError("_next_node is None")
-                        _item._next_node += offset  # 親ツリーのカウンターをアップデート
+                        _item._next_node += offset
                 tree._latest_node = max(_tree.breadth_first_search()) + offset
-                # # 親ツリーの追加先を先頭 branch の次に指定
                 if branch._root_node is None:
                     raise ValueError("_root_node is None")
                 tree._active_node = branch._root_node
@@ -1262,15 +1154,19 @@ class Utils:
 
 def ceil(value: float, unit: float = 1) -> float:
     """
-    valueの値を指定したunitの単位でその要素以上の最も近い数値に丸める（正の無限大へ丸める）.
+    Round a value up to the nearest multiple of `unit`.
 
-    Args:
-        value (float): 対象の値
-        unit (float, optional): 丸める単位. Defaults to 1.
+    Parameters
+    ----------
+    value : float
+        Value to round.
+    unit : float, default=1
+        Quantization step.
 
     Returns
     -------
-        float: 丸めた値
+    float
+        Rounded value.
     """
     exponent = math.floor(math.log10(unit))
     mantissa = unit * 10 ** (-exponent)
@@ -1291,15 +1187,19 @@ def ceil(value: float, unit: float = 1) -> float:
 
 def floor(value: float, unit: float = 1) -> float:
     """
-    valueの値を指定したunitの単位でその要素以下の最も近い数値に丸める（負の無限大へ丸める）.
+    Round a value down to the nearest multiple of `unit`.
 
-    Args:
-        value (float): 対象の値
-        unit (float, optional): 丸める単位. Defaults to 1.
+    Parameters
+    ----------
+    value : float
+        Value to round.
+    unit : float, default=1
+        Quantization step.
 
     Returns
     -------
-        float: 丸めた値
+    float
+        Rounded value.
     """
     exponent = math.floor(math.log10(unit))
     mantissa = unit * 10 ** (-exponent)
@@ -1378,7 +1278,7 @@ class Capture(Slot):
 
 
 class Modifier(Slot):
-    """begin <= t の時に cmag * func(t) を返す。未定義の場合，ステップ関数として動作。."""
+    """Apply a complex-valued modifier on top of sampled waveforms."""
 
     def __init__(self) -> None:
         """Execute init."""
@@ -1400,11 +1300,11 @@ class Modifier(Slot):
         raise ValueError("Branch object cannot set duration value")
 
     def func(self, t: float) -> complex:
-        """時間依存の Modifier (例えば frequency) を書くときにここを定義する。通常の時間非依存では 1 + 0j を返す。."""
+        """Return the local-time modifier value."""
         return 1 + 0j
 
     def _func(self, t: float) -> complex:
-        """グローバル時間軸 (begin <= t) の時に複素振幅 (self.cmag) を，それ以前は 1 + 0j を返す。."""
+        """Return the global-time modifier value."""
         if self.begin is None or self.duration is None:
             raise ValueError(
                 "Either or both 'begin' and 'duration' are not initialized."
@@ -1433,7 +1333,7 @@ class VirtualZ(Modifier):
     def __init__(self, theta: float = 0.0):
         """Execute init."""
         super().__init__()
-        self.cmag = np.exp(-1j * theta)  # theta は z 軸方向に右ネジの回転方向を正とする
+        self.cmag = np.exp(-1j * theta)
 
 
 class Magnifier(Modifier):
@@ -1505,11 +1405,11 @@ class Waveform(Slot):
         self.cmag = 1 + 0j
 
     def func(self, t: float) -> complex:
-        """正規化複素振幅 (1 + j0), ローカル時間軸 (begin=0) で iq 波形を返す．継承する時はここに関数を定義する．."""
+        """Return normalized local-time IQ samples for subclasses."""
         raise NotImplementedError()
 
     def _func(self, t: float) -> complex:
-        """func() に対して複素振幅 (self.cmag) を適用，グローバル時間軸 (t) で iq 波形を返す."""
+        """Return global-time IQ samples with complex-amplitude scaling."""
         if self.begin is None or self.duration is None:
             raise ValueError(
                 "Either or both 'begin' and 'duration' are not initialized."
@@ -1560,20 +1460,17 @@ class RaisedCosFlatTop(Waveform):
             raise ValueError("duration is too short for rise_time")
 
         t1 = 0
-        t2 = t1 + self.rise_time  # 立ち上がり完了時刻
-        t3 = t2 + flattop_duration  # 立ち下がり開始時刻
-        t4 = t3 + self.rise_time  # 立ち下がり完了時刻
+        t2 = t1 + self.rise_time
+        t3 = t2 + flattop_duration
+        t4 = t3 + self.rise_time
 
-        if (t1 <= t) & (t < t2):  # 立ち上がり時間領域の条件ブール値
-            # 立ち上がり時間領域の値
+        if (t1 <= t) & (t < t2):
             return (
                 self.amplitude * (1.0 - np.cos(np.pi * (t - t1) / self.rise_time)) / 2.0
             )
-        if (t2 <= t) & (t < t3):  # 一定値領域の条件ブール値
-            # 一定値領域の値
+        if (t2 <= t) & (t < t3):
             return self.amplitude
-        if (t3 <= t) & (t < t4):  # 立ち下がり時間領域の条件ブール値
-            # 立ち下がり時間領域の値
+        if (t3 <= t) & (t < t4):
             return (
                 self.amplitude * (1.0 - np.cos(np.pi * (t4 - t) / self.rise_time)) / 2.0
             )
@@ -1619,8 +1516,7 @@ class Arbit(Waveform):
         self._iq = np.array(iq).astype(complex)
 
     def func(self, t: float) -> complex:
-        """Iq データを格納している numpy array に従って iq(t) の値を返す."""
-        # ローカル時間軸を返すのに注意
+        """Return `iq(t)` sampled from the internal IQ array."""
         if self._iq is None:
             raise ValueError("_iq is None")
         if self.begin is None or self.duration is None:
@@ -1635,13 +1531,12 @@ class Arbit(Waveform):
 
     @property
     def iq(self) -> NDArray:
-        """Iq データを格納している numpy array への参照を返す."""
+        """Return the backing IQ array reference."""
         if self.duration is None:
             raise ValueError("duration is None")
         T, dt = self.duration, DEFAULT_SAMPLING_PERIOD
         # N = round(T // dt)
         N = math.ceil(T / dt)
-        # 初回アクセス or 前回アクセスから duration が更新されていれば ndarray を 0 + j0 で再生成
         if self._iq is None or self._iq.shape[0] != N:
             self._iq = np.zeros(N).astype(complex)  # iq data
 
@@ -1661,7 +1556,7 @@ class Sampler:
         endpoint: bool = False,
         sampling_period: float = DEFAULT_SAMPLING_PERIOD,
     ) -> NDArray[np.float64]:
-        """サンプル時系列 t 生成する。ratio 倍にオーバーサンプルする。."""
+        """Create the sample-time axis with optional oversampling."""
         dt = 1 * sampling_period / over_sampling_ratio
         if endpoint:
             duration += dt
@@ -1681,30 +1576,24 @@ class Sampler:
         sampling_timing: NDArray[np.float64],
         slots: MutableSequence[Waveform | Modifier],
     ) -> NDArray[np.complex128]:
-        """Slots を sampling_timing でサンプリングして返す。."""
+        """Sample slots at the specified sampling times."""
         tstart = sampling_timing[0]
         DT = sampling_timing[1] - sampling_timing[0]
-        # サンプリング値を格納する配列を初期化
         np_waveform = np.zeros(sampling_timing.size).astype(complex)
-        # Waveform のみを抽出
         waveforms = [o for o in slots if isinstance(o, Waveform)]
-        # 各Waveform をサンプリングして適切な位置に加算
         for w in waveforms:
             if w.begin is None or w.duration is None:
                 raise ValueError(f"begin or duration of {w.__class__.__name__} is None")
             B, E = math.ceil((w.begin - tstart) / DT), math.ceil((w.end - tstart) / DT)
             v = w.ufunc(sampling_timing[B:E])
             np_waveform[B:E] += v
-        # Modifier 値を格納する配列を初期化
         np_modifier = np.ones(sampling_timing.size).astype(complex)
-        # Modifier のみを抽出
         modifiers = [o for o in slots if isinstance(o, Modifier)]
         for m in modifiers:
             if m.begin is None:
                 raise ValueError(f"begin of {m.__class__.__name__} is None")
             B = math.ceil((m.begin - tstart) / DT)
             np_modifier[B:] *= m.ufunc(sampling_timing[B:])
-        # Modifier を Waveform に適用したものを返す
         return np.asarray(np_waveform * np_modifier, dtype=np.complex128)
 
     def __init__(
@@ -1763,8 +1652,6 @@ class Sampler:
             return self._sample(ts, self._waveforms), ts, None
 
 
-# TODO 空の sub_sequence の処理が省かれているので追加する
-# TODO subsequence の repeats 処理が曖昧なので追加する
 
 
 @dataclass
@@ -1778,7 +1665,6 @@ class SampledSequenceBase:
     repeats: int | None = None
     original_prev_blank: float | None = None  # ns
     original_post_blank: float | None = None  # ns
-    # これは本来外に出すべき
     padding: int = 0  # Sa
     modulation_frequency: float | None = None  # GHz
 
@@ -1792,7 +1678,6 @@ class GenSampledSequence(SampledSequenceBase):
     """Represent `GenSampledSequence`."""
 
     sub_sequences: MutableSequence[GenSampledSubSequence] = field(default_factory=list)
-    # これは本来外に出すべき
     readout_timings: MutableSequence[list[tuple[float, float]]] | None = None  # ns
 
     def asdict(self) -> dict:
@@ -1830,7 +1715,6 @@ class CapSampledSequence(SampledSequenceBase):
     """Represent `CapSampledSequence`."""
 
     sub_sequences: MutableSequence[CapSampledSubSequence] = field(default_factory=list)
-    # これは本来外に出すべき
     readin_offsets: MutableSequence[list[tuple[float, float]]] | None = None  # ns
 
     def asdict(self) -> dict:

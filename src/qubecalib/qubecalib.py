@@ -51,6 +51,7 @@ from .neopulse import (
     Slot,
     Waveform,
 )
+from .resource_map import ResourceMap, create_target_resource_map
 from .sysconfdb import BoxSetting, PortSetting, Quel1PortType, SystemConfigDatabase
 
 logger = logging.getLogger(__name__)
@@ -127,6 +128,11 @@ class QubeCalib:
     def sysdb(self) -> SystemConfigDatabase:
         """Return sysdb."""
         return self._system_config_database
+
+    @property
+    def executor(self) -> Executor:
+        """Return the underlying command executor."""
+        return self._executor
 
     @property
     def Quel1BoxType(self) -> type[Quel1BoxType]:
@@ -212,10 +218,6 @@ class QubeCalib:
         time_offset: dict[str, int] | None = None,  # {box_name: time_offset}
         time_to_start: dict[str, int] | None = None,  # {box_name: time_to_start}
     ) -> None:
-        # TODO ここは仕様変更が必要
-        # Readout send に位相合わせ機構を導入するため SebSequence にまとめてしまわず Slot 毎に分割しないといけない
-        # 情報を失わせ過ぎた
-        # capture に関連する gen_sequence を取り出して 変調 slice を作成する
         """Execute add sequence."""
         if time_to_start is None:
             time_to_start = {}
@@ -241,45 +243,6 @@ class QubeCalib:
                 interval=interval,
                 sysdb=self.system_config_database,
                 driver=driver,
-            )
-        )
-
-    def add_config_port(
-        self,
-        box_name: str,
-        port: int,
-        *,
-        subport: int = 0,
-        lo_freq: float | None = None,
-        cnco_freq: float | None = None,
-        cnco_locked_with: int | tuple[int, int] | None = None,
-        vatt: int | None = None,
-        sideband: str | None = None,
-        fullscale_current: int | None = None,
-        rfswitch: str | None = None,
-    ) -> None:
-        """Execute add config port."""
-        p: dict[int | tuple[int, int] | str, PortSetting | float | int | str | None] = {
-            pset.port: pset
-            for pset in self.system_config_database.port_settings.values()
-            if pset.box_name == box_name
-        }
-        p["lo_freq"] = lo_freq
-        p["cnco_freq"] = cnco_freq
-        p["vatt"] = vatt
-        p["sideband"] = sideband
-        self._executor.add_command(
-            ConfigPort(
-                box_name,
-                port,
-                subport=subport,
-                lo_freq=lo_freq,
-                cnco_freq=cnco_freq,
-                cnco_locked_with=cnco_locked_with,
-                vatt=vatt,
-                sideband=sideband,
-                fullscale_current=fullscale_current,
-                rfswitch=rfswitch,
             )
         )
 
@@ -375,33 +338,11 @@ class QubeCalib:
     def _create_target_resource_map(
         self,
         target_names: Iterable[str],
-    ) -> dict[
-        str, Iterable[dict[str, BoxSetting | PortSetting | int | dict[str, float]]]
-    ]:
-        # {target_name: sampled_sequence} の形式から
-        # TODO {target_name: {box, group, line | rline, channel | runit)} へ変換　？？
-        # {target_name: {box, port, channel_number)}} へ変換
-        db = self.system_config_database
-        targets_channels: MutableSequence[tuple[str, set[str]]] = [
-            (target_name, db.get_channels_by_target(target_name))
-            for target_name in target_names
-        ]
-        bpc_targets = {
-            target_name: [db.get_channel(_) for _ in channels]
-            for target_name, channels in targets_channels
-        }
-        return {
-            target_name: [
-                {
-                    "box": db.box_settings[box_name],
-                    "port": db.port_settings[port_name],
-                    "channel_number": channel_number,
-                    "target": db.target_settings[target_name],
-                }
-                for box_name, port_name, channel_number in _
-            ]
-            for target_name, _ in bpc_targets.items()
-        }
+    ) -> ResourceMap:
+        return create_target_resource_map(
+            sysdb=self.system_config_database,
+            target_names=target_names,
+        )
 
     def get_target_info(self, target_name: str) -> dict:
         """Execute get target info."""
@@ -607,8 +548,6 @@ class Converter:
         line_param0: tuple[float, float, float] = (1, 0, 0),
         line_param1: tuple[float, float, float] = (0, 1, 0),
     ) -> dict[tuple[str, Quel1PortType, int], WaveSequence | CaptureParam]:
-        # sampled_sequence と resource_map から e7 データを生成する
-        # gen と cap を分離する
         """Execute convert to device specific sequence."""
         capseq = cls.convert_to_cap_device_specific_sequence(
             gen_sampled_sequence=gen_sampled_sequence,
@@ -670,7 +609,6 @@ class Converter:
         line_param0: tuple[float, float, float] = (1, 0, 0),
         line_param1: tuple[float, float, float] = (0, 1, 0),
     ) -> dict[tuple[str, Quel1PortType, int], CaptureParam]:
-        # 線路に起因する遅延
         """Execute convert to cap device specific sequence."""
         ndelay_or_nwait_by_target = {
             target_name: rmap["port"].ndelay_or_nwait[rmap["channel_number"]]
@@ -680,8 +618,6 @@ class Converter:
             if isinstance(rmap["port"], PortSetting)
             and isinstance(rmap["channel_number"], int)
         }
-        # CaptureParam の生成
-        # target 毎の変調周波数の計算
         targets_freqs: MutableMapping[str, float] = {
             target_name: cls.calc_modulation_frequency(
                 f_target=rmap["target"]["frequency"],
@@ -692,8 +628,6 @@ class Converter:
         }
         for target_name, freq in targets_freqs.items():
             cap_sampled_sequence[target_name].modulation_frequency = freq
-        # target_name と (box_name, port_number, channel_number) のマップを作成する
-        # 1:1 の対応を仮定
         targets_ids = {
             target_name: (
                 rmap["box"].box_name,
@@ -709,9 +643,6 @@ class Converter:
         if len(targets_ids) != len(ids_targets):
             raise ValueError("multiple targets are assigned.")
 
-        # ハードウェア復調の場合 channel (unit) に対して単一の target を仮定する
-        # ソフトウェア復調の場合は channel 毎にデータを束ねる必要がある TODO 後日実装
-        # cap channel と target が 1:1 で対応しているか確認
         if not all(
             _ == 1
             for _ in Counter([targets_ids[_] for _ in cap_sampled_sequence]).values()
@@ -719,17 +650,14 @@ class Converter:
             raise ValueError(
                 "multiple access for single runit will be supported, not now"
             )
-        # 戻り値は {(box_name, port_number, channel_number): CaptureParam} の dict
         sseqs = list(cap_sampled_sequence.values())
         # fps = [padding] + len(sseqs[1:]) * [0]
         # lbs = len(sseqs[:-1]) * [0] + [padding]
-        # padding は WaveSequence の長さと合わせるために設けた
-        # 原則 WaveSequence は wait = 0 とする
         ids_e7 = {
             targets_ids[sseq.target_name]: CaptureParamTools.create(
                 sequence=sseq,
                 capture_delay_words=ndelay_or_nwait_by_target[sseq.target_name]
-                * 16,  # ndelay は 16 words = 1 block の単位
+                * 16,
                 repeats=repeats,
                 interval_samples=int(interval / sseq.sampling_period),  # samples
             )
@@ -778,15 +706,12 @@ class Converter:
         #     # for sub in gss.sub_sequences:
         #     #     print(sub.padding, end=" ")
         # print()
-        # WaveSequence の生成
         """Execute convert to gen device specific sequence."""
         SAMPLING_PERIOD = 2
 
-        # target 毎の変調周波数の計算と channel 毎にデータを束ねる
         targets_freqs: MutableMapping[str, float] = {}
         targets_ids: MutableMapping[str, tuple[str, Quel1PortType, int]] = {}
         for target_name, rmap in resource_map.items():
-            # target 毎の変調周波数の計算
             rmap_target = rmap["target"]
             if not isinstance(rmap_target, dict):
                 raise TypeError("target is not defined")
@@ -803,8 +728,6 @@ class Converter:
             #     for target_name, rmap in resource_map.items()
             # }
 
-            # channel 毎 (awg 毎) にデータを束ねる
-            # target_name と (box_name, port_number, channel_number) のマップを作成する
             rmap_box = rmap["box"]
             if not isinstance(rmap_box, BoxSetting):
                 raise TypeError("box is not defined")
@@ -820,17 +743,14 @@ class Converter:
                 rmap_channel_number,
             )
 
-        # readout のタイミングを考慮して位相補償を行う
         for target_name, freq in targets_freqs.items():
             gen_sampled_sequence[target_name].modulation_frequency = freq
         for target, seq in gen_sampled_sequence.items():
-            # readout target でない場合はスキップ
             if target not in cap_sampled_sequence:
                 continue
             modulation_angular_frequency = 2 * np.pi * targets_freqs[target]
             timing_list = seq.readout_timings
             offset_list = cap_sampled_sequence[target].readin_offsets
-            # もし readout_timings と readin_offsets が None なら後方互換でスキップ
             if timing_list is None and offset_list is None:
                 continue
             if timing_list is None:
@@ -866,7 +786,6 @@ class Converter:
             )
             for id in targets_ids.values()
         }
-        # (box_name, port_number, channel_number) と {target_name: sampled_sequence} とのマップを作成する
         ids_sampled_sequences: dict[
             tuple[str, Quel1PortType, int], dict[str, GenSampledSequence]
         ] = {}
@@ -885,22 +804,15 @@ class Converter:
         #     }
         #     for id in targets_ids.values()
         # }
-        # (box_name, port_number, channel_number) と {target_name: modfreq} とのマップを作成する
         ids_modfreqs = {
             id: {_: targets_freqs[_] for _, _id in targets_ids.items() if _id == id}
             for id in targets_ids.values()
         }
-        # 最初の subsequence の先頭に padding 分の 0 を追加する
-        # TODO sampling_period を見るようにする
         for seq in gen_sampled_sequence.values():
             padding = seq.padding
             subseq = seq.sub_sequences[0]
             subseq.real = np.concatenate([np.zeros(padding), subseq.real])
             subseq.imag = np.concatenate([np.zeros(padding), subseq.imag])
-        # ここから全部の subseq で位相回転 (omega(t-t0))しないといけない
-        # channel 毎に WaveSequence を生成する
-        # 戻り値は {(box_name, port_number, channel_number): WaveSequence} の dict
-        # 周波数多重した sampled_sequence を作成する
         ids_muxed_sequences = {
             id: cls.multiplex(
                 sequences=ids_sampled_sequences[id],
@@ -1002,9 +914,6 @@ class Converter:
                 fnco_freq=f_fnco,
                 sideband=opposite,
             )
-            # TODO in port の sideband の取り扱いが曖昧
-            # Dsp の設定を見るべきかな
-            # とりあえず abs が小さい方で判定するが sideband の設定に応じた diff を復調周波数として採用
             mindiff = f_diff if abs(f_diff) < abs(o_f_diff) else o_f_diff
             if abs(mindiff) > 0.25:
                 p = port_config
@@ -1043,9 +952,6 @@ class Converter:
         sequences: MutableMapping[str, GenSampledSequence],
         modfreqs: MutableMapping[str, float],
     ) -> GenSampledSequence:
-        # sequences は {target_name: GenSampledSequence} の dict だが
-        # 基本データを取得するために代表する先頭の sequence を取得する
-        # 基本データは全て同じであることを前提とする
         """Execute multiplex."""
         cls.validate_geometry_identity(sequences)
         if not cls.validate_geometry_identity(sequences):
@@ -1066,8 +972,6 @@ class Converter:
             ]
             for target_name in sequences
         }
-        # 変調する時間軸を生成する
-        # padding 分基準時間をずらす t - t0 処理が加わっている
         SAMPLING_PERIOD = sequence.sampling_period
         times = {
             target_name: [
@@ -1080,7 +984,6 @@ class Converter:
             ]
             for target_name, sequence in sequences.items()
         }
-        # 変調および多重化した複素信号
         waves = [
             np.array(
                 [
@@ -1117,7 +1020,6 @@ class Converter:
         cls,
         sequences: MutableMapping[str, GenSampledSequence],
     ) -> bool:
-        # 同一 awg から出すすべての信号の GenSampledSequence の波形構造が同一であることを確認する
         """Execute validate geometry identity."""
         _ = {
             target_name: [
@@ -1234,9 +1136,7 @@ class Sequencer(Command):
         self,
         gen_sampled_sequence: dict[str, GenSampledSequence],
         cap_sampled_sequence: dict[str, CapSampledSequence],
-        resource_map: dict[
-            str, Iterable[dict[str, BoxSetting | PortSetting | int | dict[str, Any]]]
-        ],
+        resource_map: ResourceMap,
         *,
         sysdb: SystemConfigDatabase,
         driver: direct.Quel1System | None = None,
@@ -1254,8 +1154,7 @@ class Sequencer(Command):
             time_offset = {}
         self.gen_sampled_sequence = gen_sampled_sequence
         self.cap_sampled_sequence = cap_sampled_sequence
-        self.group_items_by_terget = group_items_by_target  # TODO ここは begin, end の境界だけわかれば良いので過剰
-        # むしろオブジェクトは不要（シリアライズして送るのに面倒）
+        self.group_items_by_terget = group_items_by_target
         self.resource_map = resource_map
         self.syncoffset_by_boxname = time_offset  # taps
         self.timetostart_by_boxname = time_to_start  # sysref
@@ -1296,7 +1195,6 @@ class Sequencer(Command):
                 f"Padding of target({target_name}): box({box_name}), port({port_number}), padding({gss.padding})"
             )
 
-        # resource_map は以下の形式
         # {
         #   "box": db._box_settings[box_name],
         #   "port": db._port_settings[port_name],
@@ -1306,9 +1204,8 @@ class Sequencer(Command):
         self.sysdb = sysdb
         self._sideload_settings: list[
             direct.AwgSetting | direct.RunitSetting | direct.TriggerSetting
-        ] = []  # サイドロード用の設定
+        ] = []
 
-        # readout の target set を作る
         readout_targets = {
             target
             for target, subseq in group_items_by_target.items()
@@ -1316,7 +1213,6 @@ class Sequencer(Command):
             for item in items
             if isinstance(item, Waveform)
         }
-        # readout のタイミング (begin, end) 辞書を作る
         readout_timings: dict[str, MutableSequence[list[tuple[float, float]]]] = {
             target: [
                 [
@@ -1339,10 +1235,8 @@ class Sequencer(Command):
         readout_timings = {
             target: items for target, items in readout_timings.items() if items
         }
-        # readout_timings が 空なら後方互換
         if readout_timings:
             for target_name, gseq in gen_sampled_sequence.items():
-                # readout_timings に target_name は含まれているはず
                 gseq.readout_timings = readout_timings[target_name]
 
         readin_targets = {
@@ -1459,7 +1353,6 @@ class Sequencer(Command):
         dict[tuple[str, Quel1PortType, int], WaveSequence],
         dict[str, Any],
     ]:
-        # cap 用の cap_e7_setting と gen 用の gen_e7setting を作る
         """Execute generate e7 settings."""
         cap_resource_map = self.generate_cap_resource_map(boxpool)
         _gen_resource_map: dict[str, MutableSequence[dict[str, Any]]] = {}
@@ -1488,8 +1381,6 @@ class Sequencer(Command):
             if maps
         }
 
-        # TODO ここで caps や gens が二つ以上だとエラーを出すこと
-        # e7 の生成に必要な lo_hz などをまとめた辞書を作る
         cap_target_bpc: dict[str, TargetBPC] = {
             target_name: TargetBPC(
                 box=boxpool.get_box(m["box"].box_name)[0],
@@ -1750,7 +1641,6 @@ class Sequencer(Command):
         if not self.is_empty_trigger(settings):
             raise ValueError("trigger is already set")
 
-        # トリガを自動で設定する
         result: list[direct.TriggerSetting] = []
         caps: list[tuple[int, direct.RunitId]] = []
         gens: list[tuple[int, direct.AwgId]] = []
@@ -1758,7 +1648,6 @@ class Sequencer(Command):
         convert_any_port_name = "_convert_any_port"
         for setting in settings:
             if isinstance(setting, direct.RunitSetting):
-                # 右肺か左肺かの情報を付加して runit の設定を抽出する
                 box = quel1system.box[setting.runit.box]
                 decode_port = getattr(box, decode_port_name)
                 convert_any_port = getattr(box, convert_any_port_name)
@@ -1767,14 +1656,12 @@ class Sequencer(Command):
                 # capmod = box.rmap.get_capture_module_of_rline(group, rline)
                 caps.append((group, setting.runit))
             elif isinstance(setting, direct.AwgSetting):
-                # 右肺か左肺かの情報を付加して awg の設定を抽出する
                 box = quel1system.box[setting.awg.box]
                 decode_port = getattr(box, decode_port_name)
                 convert_any_port = getattr(box, convert_any_port_name)
                 port, _ = decode_port(setting.awg.port)
                 group, _ = convert_any_port(port)
                 gens.append((group, setting.awg))
-        # もし quel1system に明示的に trigger が設定されているならそれを使う
         defined_awgs = [s.awg for s in settings if isinstance(s, direct.AwgSetting)]
         for _runit_group, runit_id in caps:
             if (runit_id.box, runit_id.port) in quel1system.trigger:
@@ -1798,13 +1685,12 @@ class Sequencer(Command):
                         trigger_awg=awg,
                     )
                 )
-        # もし capture のみあるいは awgs のみなら tigger は設定しない
         if all([bool(caps), not bool(gens)]) or all([not bool(caps), bool(gens)]):
             return result
         pre_defined_triggers = {(s.trigger_awg.box, s.triggerd_port) for s in result}
         for runit_group, runit_id in caps:
             if (runit_id.box, runit_id.port) in pre_defined_triggers:
-                continue  # もしすでに trigger が設定されているならスキップ
+                continue
             for awg_group, awg_id in gens:
                 if runit_id.box == awg_id.box and runit_group == awg_group:
                     result.append(
@@ -1814,7 +1700,6 @@ class Sequencer(Command):
                         )
                     )
                     break
-            # 別の group の trigger を割り当てるようにチャレンジ
             for _awg_group, awg_id in gens:
                 if runit_id.box == awg_id.box:
                     result.append(
@@ -1851,81 +1736,6 @@ class Sequencer(Command):
         sorted_iqs = {key: _iqs[key] for key in sorted(_iqs)}
 
         return _status, sorted_iqs
-
-
-class Configurator(Command):
-    """Represent `Configurator`."""
-
-    def execute(
-        self,
-        boxpool: BoxPool,
-    ) -> None:
-        """Execute execute."""
-        print(f"{self.__class__.__name__} executed")
-
-
-class ConfigPort(Command):
-    """Represent `ConfigPort`."""
-
-    def __init__(
-        self,
-        box_name: str,
-        port: int,
-        *,
-        subport: int = 0,
-        lo_freq: float | None = None,
-        cnco_freq: float | None = None,
-        cnco_locked_with: int | tuple[int, int] | None = None,
-        vatt: int | None = None,
-        sideband: str | None = None,
-        fullscale_current: int | None = None,
-        rfswitch: str | None = None,
-    ) -> None:
-        self.box_name = box_name
-        self.port = port
-        self.subport = subport
-        self.lo_freq = lo_freq
-        self.cnco_freq = cnco_freq
-        self.cnco_locked_with = cnco_locked_with
-        self.vatt = vatt
-        self.sideband = sideband
-        self.fullscale_current = fullscale_current
-        self.rfswitch = rfswitch
-
-    def execute(
-        self,
-        boxpool: BoxPool,
-    ) -> None:
-        """Execute execute."""
-        print(f"{self.__class__.__name__} executed")
-
-
-class ConfigChannel(Command):
-    """Represent `ConfigChannel`."""
-
-    def __init__(
-        self,
-        box_name: str,
-        port: int,
-        channel: int,
-        *,
-        subport: int = 0,
-        fnco_freq: float | None = None,
-    ):
-        self.box_name = box_name
-        self.port = port
-        self.channel = channel
-        self.subport = subport
-        self.fnco_freq = fnco_freq
-
-    def execute(
-        self,
-        boxpool: BoxPool,
-    ) -> None:
-        """Execute execute."""
-        print(f"{self.__class__.__name__} executed")
-        # box = boxpool(self.box_name)
-        # box.config_port()
 
 
 class Executor:
@@ -1990,7 +1800,6 @@ class Executor:
         return self
 
     def __next__(self) -> tuple[Any, dict, dict]:
-        # ワークキューが空になったら実行を止める
         """Execute   next  ."""
         if not self._work_queue:
             self.check_config()
@@ -1998,23 +1807,18 @@ class Executor:
             self.refresh_boxpool()
             self.clear_log()
             raise StopIteration()
-        # Sequencer が見つかるまでコマンドを逐次実行
         while True:
-            # もしワークキューが空になったらエラーを出す
             if not self._work_queue:
                 raise ValueError(
                     "command que should include at least one Sequencer command."
                 )
             next = self._work_queue.pop()
-            # 次に実行するコマンドが Sequencer ならばループを抜ける
             if isinstance(next, Sequencer):
                 # for box, _ in self._boxpool._boxes.values():
                 #     box.initialize_all_awgs()
                 break
-            # Sequencer 以外のコマンドを逐次実行
             next.execute(self._boxpool)
         for command in self._work_queue:
-            # もしコマンドキューに Sequencer が残っていれば次の Sequencer を実行する
             if isinstance(command, Sequencer):
                 # if self._quel1system is None:
                 #     raise ValueError("Quel1System is not defined")
@@ -2041,7 +1845,6 @@ class Executor:
                     self.clear_log()
                 # return status, iqs, config
                 return results
-        # これ以上 Sequencer がなければ残りのコマンドを実行する
         # if self._quel1system is None:
         #     raise ValueError("Quel1System is not defined")
         # status, iqs, config = next.execute(self._boxpool, self._quel1system)
@@ -2109,7 +1912,7 @@ class Executor:
         self._config_buffer.clear()
 
     def execute(self) -> tuple:
-        """Queue に登録されている command を実行する（未実装）."""
+        """Execute queued commands (reserved placeholder)."""
         return "", "", ""
 
     def step_execute(
@@ -2120,15 +1923,12 @@ class Executor:
         dsp_demodulation: bool = True,
         software_demodulation: bool = False,
     ) -> Executor:
-        """Queue に登録されている command を実行する iterator を返す."""
-        # work queue を舐めて必要な box を生成する
+        """Return an iterator that executes queued commands step-by-step."""
         boxes = self.collect_boxes()
-        # もし box が複数で clockmaster_setting が設定されていれば QuBEMasterClient を生成する
         clockmaster_setting = self.sysdb.clockmaster_setting
         if len(boxes) > 1 and clockmaster_setting is not None:
             self._boxpool.create_clock_master(ipaddr=str(clockmaster_setting.ipaddr))
         if self.quel1system is None:
-            # boxpool を生成する
             for box_name in boxes:
                 setting = self.sysdb.box_settings[box_name]
                 box = self._boxpool.create(
@@ -2159,7 +1959,6 @@ class Executor:
                     sequencer=sqc,
                 )
 
-        # sequencer に measurement_option を設定する
         for sequencer in self.collect_sequencers():
             if sequencer.interval is None:
                 new_interval = interval
@@ -2178,33 +1977,11 @@ class Executor:
     def _create_target_resource_map(
         self,
         target_names: Iterable[str],
-    ) -> dict[
-        str, Iterable[dict[str, BoxSetting | PortSetting | int | dict[str, float]]]
-    ]:
-        # {target_name: sampled_sequence} の形式から
-        # TODO {target_name: {box, group, line | rline, channel | runit)} へ変換　？？
-        # {target_name: {box, port, channel_number)}} へ変換
-        db = self.sysdb
-        targets_channels: MutableSequence[tuple[str, set[str]]] = [
-            (target_name, db.get_channels_by_target(target_name))
-            for target_name in target_names
-        ]
-        bpc_targets = {
-            target_name: [db.get_channel(_) for _ in channels]
-            for target_name, channels in targets_channels
-        }
-        return {
-            target_name: [
-                {
-                    "box": db.box_settings[box_name],
-                    "port": db.port_settings[port_name],
-                    "channel_number": channel_number,
-                    "target": db.target_settings[target_name],
-                }
-                for box_name, port_name, channel_number in _
-            ]
-            for target_name, _ in bpc_targets.items()
-        }
+    ) -> ResourceMap:
+        return create_target_resource_map(
+            sysdb=self.sysdb,
+            target_names=target_names,
+        )
 
     def add_sequence(
         self,
@@ -2215,10 +1992,6 @@ class Executor:
         time_offset: dict[str, int] | None = None,  # {box_name: time_offset}
         time_to_start: dict[str, int] | None = None,  # {box_name: time_to_start}
     ) -> None:
-        # TODO ここは仕様変更が必要
-        # Readout send に位相合わせ機構を導入するため SebSequence にまとめてしまわず Slot 毎に分割しないといけない
-        # 情報を失わせ過ぎた
-        # capture に関連する gen_sequence を取り出して 変調 slice を作成する
         """Execute add sequence."""
         if time_to_start is None:
             time_to_start = {}
@@ -2275,6 +2048,11 @@ class BoxPool:
         """Return registered boxes and their sequencer clients."""
         return self._boxes
 
+    @property
+    def box_config_cache(self) -> dict[str, dict]:
+        """Return cached `dump_box()` payloads by box name."""
+        return self._box_config_cache
+
     def register_existing_box(
         self,
         *,
@@ -2300,6 +2078,17 @@ class BoxPool:
     def clear_box_config_cache(self) -> None:
         """Clear cached dump-box payloads."""
         self._box_config_cache.clear()
+
+    def replace_box_config_cache(self, box_configs: dict[str, Any]) -> None:
+        """Replace cached `dump_box()` payloads."""
+        self._box_config_cache = {
+            box_name: cast(dict, config) for box_name, config in box_configs.items()
+        }
+
+    def update_box_config_cache(self, box_configs: dict[str, Any]) -> None:
+        """Update cached `dump_box()` payloads by key."""
+        for box_name, config in box_configs.items():
+            self._box_config_cache[box_name] = cast(dict, config)
 
     def create_clock_master(
         self,

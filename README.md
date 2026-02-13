@@ -1,58 +1,66 @@
-qubecalib is a Python library for quantum control experiments using QuBE/QuEL.
+# qubecalib
 
+`qubecalib` is a calibration and sequence-execution library for QuBE/QuEL systems.
+It provides:
 
-## Requirements
+- System configuration modeling (`SystemConfigDatabase`)
+- Pulse-sequence sampling (`neopulse`)
+- Direct quelware 0.10 action execution (`instrument/quel/quel1/driver`)
+- High-level orchestration (`QubeCalib`, `Executor`)
 
-- Python 3.9+
+## Compatibility Policy
 
+This package is maintained for `qubex -> qubecalib` integration.
+
+- Public APIs used by `qubex` must remain backward compatible.
+- Internal implementation may be refactored aggressively.
+- quelware target: 0.10.x series.
 
 ## Installation
 
-You can install qubecalib with the following steps.
+### Prerequisites
 
-### 1. Install Python (optional)
+- Python 3.9+
+- `pip` or `uv`
 
-Confirm that Python 3.9 or later is installed.
-
-```bash
-python --version
-```
-
-If not, install an appropriate Python version using [pyenv](https://github.com/pyenv/pyenv) or other tools.
-
-
-### 2. Create and activate a virtual environment
-
-Create a dedicated virtual environment using venv.
-
-```bash
-# Move to your workspace
-cd YOUR_WORKSPACE
-
-# Create a virtual environment named .venv
-python -m venv .venv
-
-# Activate the virtual environment
-source .venv/bin/activate
-```
-
-### 3. Install qubecalib
-
-Install qubecalib from the GitHub repository using pip.
+### Install from repository
 
 ```bash
 pip install git+https://github.com/qiqb-osaka/qube-calib.git
 ```
 
-To install a specific version (x.y.z), run the following command.
+Install a pinned tag:
 
 ```bash
 pip install git+https://github.com/qiqb-osaka/qube-calib.git@x.y.z
 ```
 
-Check available versions on the [release page](https://github.com/qiqb-osaka/qube-calib/releases).
+## Development
 
+From the workspace root:
 
-## Notes
+```bash
+uv run ruff check packages/qube-calib/src
+uv run ruff format packages/qube-calib/src
+uv run pyright packages/qube-calib/src
+uv run pytest packages/qube-calib/tests/unit -q
+```
 
-- `QubeServer.py` has been moved to the [qube-server](https://github.com/qiqb-osaka/qube-server) repository.
+Full workspace gates (if `qubex` is checked out together):
+
+```bash
+uv run ruff check src tests packages/qube-calib/src
+uv run pyright
+uv run pytest -q
+```
+
+## Project Layout
+
+- `src/qubecalib/`: library sources
+- `tests/`: unit tests
+- `docs/`: usage notebooks and sample configs
+
+## Related Projects
+
+- `qube-server`: moved from historical `QubeServer.py` scope
+  ([qiqb-osaka/qube-server](https://github.com/qiqb-osaka/qube-server))

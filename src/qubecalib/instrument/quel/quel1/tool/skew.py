@@ -927,14 +927,14 @@ class Skew:
             0,
         )
         sysdb.trigger = {monitor_port: trigger_channel}
-        # monitor の周波数を target に合わせる
+        # Align monitor frequency settings with the current target.
         self._setup_monitor_port(
             target_port=target_port,
             monitor_port=monitor_port,
             system=system,
             sysdb=sysdb,
         )
-        # trigger の target 周波数を設定する
+        # Update trigger target frequency from trigger-port NCO settings.
         self._setup_trigger_port(
             trigger_port=trigger_port,
             system=system,
