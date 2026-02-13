@@ -9,22 +9,18 @@ import os
 import time
 import warnings
 from collections import Counter, deque
+from collections.abc import Iterable, MutableMapping, MutableSequence
 from enum import Enum
 from pathlib import Path
 from typing import (
     Any,
     Final,
-    Iterable,
-    MutableMapping,
-    MutableSequence,
-    Optional,
     TypedDict,
 )
 
 import numpy as np
 import numpy.typing as npt
-from e7awgsw import CaptureModule, CaptureParam, DspUnit, WaveSequence
-from quel_clock_master import QuBEMasterClient, SequencerClient
+from .clockmaster_compat import QuBEMasterClient, SequencerClient, register_box
 from quel_ic_config import (
     QUEL1_BOXTYPE_ALIAS,
     Quel1Box,
@@ -37,6 +33,7 @@ from typing_extensions import deprecated
 Quel1BoxWithRawWss = Quel1Box
 
 from . import __version__, neopulse
+from .e7compat import CaptureModule, CaptureParam, DspUnit, WaveSequence
 from .e7utils import (
     CaptureParamTools,
     WaveSequenceTools,
@@ -72,7 +69,7 @@ DEFAULT_SIDEBAND = "U"
 class QubeCalib:
     def __init__(
         self,
-        path_to_database_file: Optional[str | os.PathLike] = None,
+        path_to_database_file: str | os.PathLike | None = None,
     ) -> None:
         self._system_config_database: Final[SystemConfigDatabase] = (
             SystemConfigDatabase()
@@ -90,7 +87,7 @@ class QubeCalib:
         box_yaml: str = "",
         skew_yaml: str = "",
         clockmaster_ip: str = "",
-    ) -> "QubeCalib":
+    ) -> QubeCalib:
         self = cls()
         if box_yaml != "":
             self.sysdb.load_box_yaml(box_yaml)
@@ -184,7 +181,7 @@ class QubeCalib:
         sequence: neopulse.Sequence,
         *,
         driver: direct.Quel1System | None = None,
-        interval: Optional[float] = None,
+        interval: float | None = None,
         time_offset: dict[str, int] = {},  # {box_name: time_offset}
         time_to_start: dict[str, int] = {},  # {box_name: time_to_start}
     ) -> None:
@@ -224,13 +221,13 @@ class QubeCalib:
         port: int,
         *,
         subport: int = 0,
-        lo_freq: Optional[float] = None,
-        cnco_freq: Optional[float] = None,
-        cnco_locked_with: Optional[int | tuple[int, int]] = None,
-        vatt: Optional[int] = None,
-        sideband: Optional[str] = None,
-        fullscale_current: Optional[int] = None,
-        rfswitch: Optional[str] = None,
+        lo_freq: float | None = None,
+        cnco_freq: float | None = None,
+        cnco_locked_with: int | tuple[int, int] | None = None,
+        vatt: int | None = None,
+        sideband: str | None = None,
+        fullscale_current: int | None = None,
+        rfswitch: str | None = None,
     ) -> None:
         p: dict[int | tuple[int, int] | str, PortSetting | float | int | str | None] = {
             pset.port: pset
@@ -260,7 +257,7 @@ class QubeCalib:
         self,
         target_name: str,
         channel_name: str,
-        target_frequency: Optional[float] = None,
+        target_frequency: float | None = None,
     ) -> None:
         db = self.system_config_database
         db._relation_channel_target.append((channel_name, target_name))
@@ -284,9 +281,9 @@ class QubeCalib:
         box_name: str,
         ipaddr_wss: str,
         boxtype: str,
-        ipaddr_sss: Optional[str] = None,
-        ipaddr_css: Optional[str] = None,
-        config_root: Optional[str] = None,
+        ipaddr_sss: str | None = None,
+        ipaddr_css: str | None = None,
+        config_root: str | None = None,
         config_options: MutableSequence[Quel1ConfigOption] = [],
     ) -> dict[str, Any]:
         return self.system_config_database.define_box(
@@ -318,13 +315,14 @@ class QubeCalib:
         port_name: str,
         box_name: str,
         port_number: int,
-        lo_freq: Optional[float] = None,
-        cnco_freq: Optional[float] = None,
+        lo_freq: float | None = None,
+        cnco_freq: float | None = None,
         sideband: str = DEFAULT_SIDEBAND,
         vatt: int = 0x800,
-        fnco_freq: Optional[
-            tuple[float] | tuple[float, float] | tuple[float, float, float]
-        ] = None,
+        fnco_freq: tuple[float]
+        | tuple[float, float]
+        | tuple[float, float, float]
+        | None = None,
     ) -> None:
         self.system_config_database.define_port(
             port_name=port_name,
@@ -423,9 +421,8 @@ class QubeCalib:
     def read_clock(self, *box_names: str) -> MutableSequence[tuple[bool, int, int]]:
         return [
             SequencerClient(
-                target_ipaddr=str(
-                    self.system_config_database._box_settings[_].ipaddr_sss
-                )
+                target_ipaddr=str(self.system_config_database._box_settings[_].ipaddr_sss),
+                box=self.system_config_database.create_box(_, reconnect=False),
             ).read_clock()
             for _ in box_names
         ]
@@ -468,7 +465,7 @@ class QubeCalib:
             )
 
     def load_all_box_configs(self, path_to_config_file: str | os.PathLike) -> None:
-        with open(Path(os.getcwd()) / Path(path_to_config_file), "r") as fp:
+        with open(Path(os.getcwd()) / Path(path_to_config_file)) as fp:
             configs = json.load(fp)
         for box_name, _ in configs.items():
             ports: dict[int | tuple[int, int], dict[str, Any]] = {
@@ -875,7 +872,7 @@ class Converter:
         f_cnco = port_config.cnco_freq * 1e-9  # Hz -> GHz
         f_fnco = port_config.fnco_freq * 1e-9  # Hz -> GHz
         f_diff = f_target - (f_cnco + f_fnco)
-        if 0.5 < abs(f_diff):
+        if abs(f_diff) > 0.5:
             p = port_config
             warnings.warn(
                 f"Modulation frequency abs({f_diff}) of {p._box_name}:{p._port}:{p._channel} is too high. f_target={f_target} GHz, f_cnco={f_cnco} GHz, f_fnco={f_fnco} GHz"
@@ -923,7 +920,7 @@ class Converter:
                 sideband=sideband,
             )
 
-            if 0.5 < abs(f_diff):
+            if abs(f_diff) > 0.5:
                 p = port_config
                 warnings.warn(
                     f"Modulation frequency abs({f_diff}) of {p._box_name}:{p._port}:{p._channel} is too high. f_target={f_target} GHz, f_lo={f_lo} GHz, f_cnco={f_cnco} GHz, f_fnco={f_fnco} GHz, sideband={sideband}"
@@ -948,7 +945,7 @@ class Converter:
             # Dsp の設定を見るべきかな
             # とりあえず abs が小さい方で判定するが sideband の設定に応じた diff を復調周波数として採用
             mindiff = f_diff if abs(f_diff) < abs(o_f_diff) else o_f_diff
-            if 0.25 < abs(mindiff):
+            if abs(mindiff) > 0.25:
                 p = port_config
                 warnings.warn(
                     f"Modulation frequency abs({mindiff}) of {p._box_name}:{p._port}:{p._channel} is too high. f_target={f_target} GHz, f_lo={f_lo} GHz, f_cnco={f_cnco} GHz, f_fnco={f_fnco} GHz, sideband={sideband}"
@@ -1113,17 +1110,10 @@ class PortConfigAcquirer:
                 fnco_freq = dp["channels"][channel]["fnco_freq"]
             if port in box.get_input_ports():
                 fnco_freq = dp["runits"][channel]["fnco_freq"]
-                if port in box.get_read_input_ports():
-                    lpbackps = box.get_loopbacks_of_port(port)
-                    if lpbackps:
-                        lpbackp = next(iter(lpbackps))
-                        dumped_port = dump_box[lpbackp]
-                        sideband = (
-                            dumped_port["sideband"]
-                            if "sideband" in dumped_port
-                            else DEFAULT_SIDEBAND
-                        )
-                elif port in box.get_monitor_input_ports():
+                if (
+                    port in box.get_read_input_ports()
+                    or port in box.get_monitor_input_ports()
+                ):
                     lpbackps = box.get_loopbacks_of_port(port)
                     if lpbackps:
                         lpbackp = next(iter(lpbackps))
@@ -1180,7 +1170,7 @@ class Sequencer(Command):
         time_offset: dict[str, int] = {},
         time_to_start: dict[str, int] = {},
         group_items_by_target: dict[str, dict[int, MutableSequence[Slot]]] = {},
-        interval: Optional[float] = None,
+        interval: float | None = None,
     ):
         self.gen_sampled_sequence = gen_sampled_sequence
         self.cap_sampled_sequence = cap_sampled_sequence
@@ -1752,7 +1742,7 @@ class Sequencer(Command):
     @classmethod
     def convert_key_from_bmu_to_target(
         cls,
-        bmc_target: dict[tuple[Optional[str], CaptureModule, Optional[int]], str],
+        bmc_target: dict[tuple[str | None, CaptureModule, int | None], str],
         status: dict[tuple[str, CaptureModule], CaptureReturnCode],
         iqs: dict[tuple[str, CaptureModule], dict[int, list]],
     ) -> tuple[dict[str, CaptureReturnCode], dict[str, list]]:
@@ -1788,13 +1778,13 @@ class ConfigPort(Command):
         port: int,
         *,
         subport: int = 0,
-        lo_freq: Optional[float] = None,
-        cnco_freq: Optional[float] = None,
-        cnco_locked_with: Optional[int | tuple[int, int]] = None,
-        vatt: Optional[int] = None,
-        sideband: Optional[str] = None,
-        fullscale_current: Optional[int] = None,
-        rfswitch: Optional[str] = None,
+        lo_freq: float | None = None,
+        cnco_freq: float | None = None,
+        cnco_locked_with: int | tuple[int, int] | None = None,
+        vatt: int | None = None,
+        sideband: str | None = None,
+        fullscale_current: int | None = None,
+        rfswitch: str | None = None,
     ) -> None:
         self.box_name = box_name
         self.port = port
@@ -1822,7 +1812,7 @@ class ConfigChannel(Command):
         channel: int,
         *,
         subport: int = 0,
-        fnco_freq: Optional[float] = None,
+        fnco_freq: float | None = None,
     ):
         self.box_name = box_name
         self.port = port
@@ -1999,7 +1989,7 @@ class Executor:
         self._config_buffer.clear()
 
     def execute(self) -> tuple:
-        """queue に登録されている command を実行する（未実装）"""
+        """Queue に登録されている command を実行する（未実装）"""
         return "", "", ""
 
     def step_execute(
@@ -2010,7 +2000,7 @@ class Executor:
         dsp_demodulation: bool = True,
         software_demodulation: bool = False,
     ) -> Executor:
-        """queue に登録されている command を実行する iterator を返す"""
+        """Queue に登録されている command を実行する iterator を返す"""
         # work queue を舐めて必要な box を生成する
         boxes = self.collect_boxes()
         # もし box が複数で clockmaster_setting が設定されていれば QuBEMasterClient を生成する
@@ -2042,7 +2032,8 @@ class Executor:
         else:
             for box_name in self.quel1system.boxes:
                 box = self.quel1system.boxes[box_name]
-                sqc = SequencerClient(box.wss._wss_addr)
+                register_box(box)
+                sqc = SequencerClient(str(box.wss.ipaddr_sss), box=box)
                 self._boxpool._boxes[box_name] = (box, sqc)
                 self._boxpool._linkstatus[box_name] = False
 
@@ -2098,7 +2089,7 @@ class Executor:
         sequence: neopulse.Sequence,
         *,
         driver: direct.Quel1System | None = None,
-        interval: Optional[float] = None,
+        interval: float | None = None,
         time_offset: dict[str, int] = {},  # {box_name: time_offset}
         time_to_start: dict[str, int] = {},  # {box_name: time_to_start}
     ) -> None:
@@ -2158,7 +2149,7 @@ class BoxPool:
         self, num_iters: int = DEFAULT_NUM_SYSREF_MEASUREMENTS
     ) -> tuple[str, int]:
         sqcs = {name: sqc for name, (_, sqc) in self._boxes.items()}
-        counter_at_sysref_clk = {name: 0 for name in self._boxes}
+        counter_at_sysref_clk = dict.fromkeys(self._boxes, 0)
         for _ in range(num_iters):
             for name, sqc in sqcs.items():
                 m = sqc.read_clock()
@@ -2195,7 +2186,8 @@ class BoxPool:
             # config_root=config_root,
             # config_options=config_options,
         )
-        sqc = SequencerClient(ipaddr_sss)
+        register_box(box)
+        sqc = SequencerClient(ipaddr_sss, box=box)
         self._boxes[box_name] = (box, sqc)
         self._linkstatus[box_name] = False
         return box

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
-from e7awgsw import CaptureParam, DspUnit, WaveSequence
+from qubecalib.e7compat import CaptureParam, DspUnit, WaveSequence
 from qubecalib.instrument.quel.quel1.driver.compat import (
     convert_captureparam,
     convert_wavesequence,

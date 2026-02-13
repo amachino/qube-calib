@@ -5,9 +5,9 @@ from typing import Final, NamedTuple
 
 import numpy as np
 import numpy.typing as npt
-from e7awgsw import CaptureParam, WaveSequence
 from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
 
+from qubecalib.e7compat import CaptureParam, WaveSequence
 from . import multi, single
 from .single import Quel1PortType
 

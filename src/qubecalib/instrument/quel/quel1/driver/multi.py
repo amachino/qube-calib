@@ -7,7 +7,7 @@ from typing import Any, Final, MutableSequence, NamedTuple, Optional, cast
 
 import numpy as np
 import numpy.typing as npt
-from quel_clock_master import QuBEMasterClient, SequencerClient
+from qubecalib.clockmaster_compat import QuBEMasterClient, SequencerClient, register_box
 from quel_ic_config import Quel1Box
 from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
 
@@ -58,8 +58,10 @@ class Quel1System:
         for box in boxes:
             if isinstance(box, NamedBox):
                 boxes_dict[box.name] = box.box
+                register_box(box.box)
             else:
                 boxes_dict[box.wss.ipaddr_wss] = box
+                register_box(box)
         self = cls(clockmaster, MappingProxyType(boxes_dict))
         if update_copnfig_cache:
             self.update_config_cache()
@@ -75,7 +77,10 @@ class Quel1System:
 
     def read_clock(self, *box_names: str) -> MutableSequence[tuple[bool, int, int]]:
         return [
-            SequencerClient(target_ipaddr=str(self.box[b].sss.ipaddress)).read_clock()
+            SequencerClient(
+                target_ipaddr=str(self.box[b].wss.ipaddr_sss),
+                box=self.box[b],
+            ).read_clock()
             for b in box_names
         ]
 
@@ -85,7 +90,7 @@ class Quel1System:
         if len(box_names) == 0:
             box_names = tuple(self.boxes.keys())
         master = self._clockmaster
-        master.kick_clock_synch([str(self.box[b].sss.ipaddress) for b in box_names])
+        master.kick_clock_synch([str(self.box[b].wss.ipaddr_sss) for b in box_names])
         return [(b, self.read_clock(b)) for b in box_names] + [master.read_clock()]
 
     def initialize(self, *box_names: str) -> None:

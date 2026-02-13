@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Final, MutableSequence, Optional, Set
 
 import yaml
-from quel_clock_master import QuBEMasterClient
+from .clockmaster_compat import QuBEMasterClient, register_box
 from quel_ic_config import (
     QUEL1_BOXTYPE_ALIAS,
     Quel1Box,
@@ -402,6 +402,7 @@ class SystemConfigDatabase:
             boxtype=s.boxtype,
             skip_init=False,
         )
+        register_box(box)
         if reconnect:
             if not all([_ for _ in box.link_status().values()]):
                 box.relinkup(use_204b=False, background_noise_threshold=350)

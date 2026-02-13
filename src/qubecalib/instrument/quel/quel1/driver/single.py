@@ -6,10 +6,10 @@ from typing import Any, Final, NamedTuple, Union, cast
 
 import numpy as np
 import numpy.typing as npt
-from e7awgsw import CaptureParam, WaveSequence
 from quel_ic_config import Quel1Box
 from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
 
+from qubecalib.e7compat import CaptureParam, WaveSequence
 from .compat import convert_captureparam, convert_wavesequence, reader_to_flat_wave
 
 Quel1PortType = Union[int, tuple[int, int]]

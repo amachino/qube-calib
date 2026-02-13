@@ -4,8 +4,9 @@ from dataclasses import dataclass
 
 import numpy as np
 import numpy.typing as npt
-from e7awgsw import CaptureParam, DspUnit, WaveSequence
 from quel_ic_config import AwgParam, CapIqDataReader, CapParam, CapSection, WaveChunk
+
+from qubecalib.e7compat import CaptureParam, DspUnit, WaveSequence
 
 
 @dataclass(frozen=True)
@@ -68,11 +69,12 @@ def convert_captureparam(cprm: CaptureParam) -> CapParam:
     cap_param.window_enable = DspUnit.COMPLEX_WINDOW in dsp_enabled
     cap_param.classification_enable = DspUnit.CLASSIFICATION in dsp_enabled
 
-    if hasattr(cprm, "complex_fir_coefs"):
+    fir_coefs = getattr(cprm, "complex_fir_coefs", None)
+    if fir_coefs:
         # e7awgsw stores FIR coefficients as fixed-point-like integers, while
         # quel_ic_config.CapParam expects normalized float coefficients.
         # Convert by exponent offset and clamp to the accepted range [-2.0, 2.0).
-        fir = np.asarray(cprm.complex_fir_coefs, dtype=np.complex64)
+        fir = np.asarray(fir_coefs, dtype=np.complex64)
         fir_scale = float(1 << cap_param.complexfir_exponent_offset)
         fir_lower = np.float32(-2.0)
         fir_upper = np.nextafter(np.float32(2.0), np.float32(0.0))
@@ -82,11 +84,12 @@ def convert_captureparam(cprm: CaptureParam) -> CapParam:
             fir_real + 1j * fir_imag,
             dtype=np.complex64,
         )
-    if hasattr(cprm, "complex_window_coefs"):
+    window_coefs = getattr(cprm, "complex_window_coefs", None)
+    if window_coefs:
         # e7awgsw window coefficients are also integer-scaled values.
         # CapParam validates normalized coefficients in [-2.0, 2.0), so rescale
         # by 2^30 and clamp for backend compatibility.
-        window = np.asarray(cprm.complex_window_coefs, dtype=np.complex128)
+        window = np.asarray(window_coefs, dtype=np.complex128)
         window_scale = float(1 << 30)
         window_lower = np.float64(-2.0)
         window_upper = np.nextafter(np.float64(2.0), np.float64(0.0))

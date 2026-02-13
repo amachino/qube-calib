@@ -1,7 +1,7 @@
 import pytest
-from e7awgsw import CaptureParam, WaveSequence
+from qubecalib.e7compat import CaptureParam, WaveSequence
 from qubecalib.instrument.quel.quel1.driver import multi, single
-from quel_clock_master import QuBEMasterClient
+from qubecalib.clockmaster_compat import QuBEMasterClient
 from quel_ic_config import Quel1Box, Quel1BoxType
 
 Quel1BoxWithRawWss = Quel1Box

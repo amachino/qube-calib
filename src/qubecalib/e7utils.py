@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import math
 import sys
-from typing import Any, MutableMapping, MutableSequence
+from collections.abc import MutableMapping, MutableSequence
+from typing import Any
 
 import numpy as np
 
 # from dataclasses import dataclass
-from e7awgsw import CaptureParam, DspUnit, IqWave, WaveSequence
-
+from .e7compat import CaptureParam, DspUnit, IqWave, WaveSequence
 from .neopulse import CapSampledSequence, GenSampledSequence
 
 # import json
@@ -425,7 +425,7 @@ def _convert_gen_sampled_sequence_to_blanks_and_waves_chain(
 def _convert_cap_sampled_sequence_to_blanks_and_durations_chain(
     sequence: CapSampledSequence,
 ) -> MutableSequence:
-    """cap sampled sequence を blank - duration チェーンに変換する"""
+    """Cap sampled sequence を blank - duration チェーンに変換する"""
     seq = sequence
 
     # sub sequence 間を橋渡しするブランクのリスト MutableSequence[Optional[int|float]]
@@ -480,7 +480,7 @@ def _convert_cap_sampled_sequence_to_blanks_and_durations_chain(
 def _convert_cap_sampled_sequence_to_blanks_and_durations_chain_use_original_values(
     sequence: CapSampledSequence,
 ) -> MutableSequence:
-    """cap sampled sequence を blank - duration チェーンに変換する（ただし、オリジナルの値を使う）"""
+    """Cap sampled sequence を blank - duration チェーンに変換する（ただし、オリジナルの値を使う）"""
     seq = sequence
 
     # sub sequence 間を橋渡しするブランクのリスト MutableSequence[Optional[int|float]]
