@@ -58,6 +58,7 @@ uv run pytest -q
 
 - `src/qubecalib/qubecalib.py`: compatibility facade and high-level orchestration APIs
 - `src/qubecalib/runtime/`: execution runtime internals (`Executor`, `BoxPool`)
+- `src/qubecalib/runtime/sequencer.py`: sequence compilation/execution primitives
 - `src/qubecalib/instrument/quel/quel1/`: quelware 0.10 driver compatibility layer
 - `src/qubecalib/resource_map.py`: target-to-resource mapping logic
 - `tests/unit/`: unit tests

@@ -2,5 +2,14 @@
 
 from .box_pool import BoxPool
 from .executor import Executor
+from .sequencer import DEFAULT_SIDEBAND, Converter, Direction, Sequencer, Sideband
 
-__all__ = ["BoxPool", "Executor"]
+__all__ = [
+    "DEFAULT_SIDEBAND",
+    "BoxPool",
+    "Converter",
+    "Direction",
+    "Executor",
+    "Sequencer",
+    "Sideband",
+]
