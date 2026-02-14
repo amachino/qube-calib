@@ -1,69 +1,26 @@
 """Runtime module export compatibility tests."""
 
-from qubecalib.qubecalib import (
-    DEFAULT_SIDEBAND,
-    BoxPool,
-    CaptureParamTools,
-    Command,
-    Converter,
-    Direction,
-    Executor,
-    PortConfigAcquirer,
-    RfSwitch,
-    Sequencer,
-    Sideband,
-    TargetBPC,
-    WaveSequenceTools,
-)
+from qubecalib import qubecalib as legacy
+from qubecalib.facade import QubeCalib as FacadeQubeCalib
+from qubecalib.runtime import commands as runtime_commands
+from qubecalib.runtime import sequencer as runtime_sequencer
 from qubecalib.runtime.box_pool import BoxPool as RuntimeBoxPool
-from qubecalib.runtime.commands import (
-    Command as RuntimeCommand,
-)
-from qubecalib.runtime.commands import (
-    PortConfigAcquirer as RuntimePortConfigAcquirer,
-)
-from qubecalib.runtime.commands import (
-    RfSwitch as RuntimeRfSwitch,
-)
-from qubecalib.runtime.commands import (
-    TargetBPC as RuntimeTargetBPC,
-)
 from qubecalib.runtime.executor import Executor as RuntimeExecutor
-from qubecalib.runtime.sequencer import (
-    DEFAULT_SIDEBAND as RuntimeDefaultSideband,
-)
-from qubecalib.runtime.sequencer import (
-    CaptureParamTools as RuntimeCaptureParamTools,
-)
-from qubecalib.runtime.sequencer import (
-    Converter as RuntimeConverter,
-)
-from qubecalib.runtime.sequencer import (
-    Direction as RuntimeDirection,
-)
-from qubecalib.runtime.sequencer import (
-    Sequencer as RuntimeSequencer,
-)
-from qubecalib.runtime.sequencer import (
-    Sideband as RuntimeSideband,
-)
-from qubecalib.runtime.sequencer import (
-    WaveSequenceTools as RuntimeWaveSequenceTools,
-)
 
 
 def test_qubecalib_reexports_runtime_classes() -> None:
     """Given runtime modules, when importing legacy paths, then re-exports are identical."""
-    assert Executor is RuntimeExecutor
-    assert BoxPool is RuntimeBoxPool
-    assert Sequencer is RuntimeSequencer
-    assert Converter is RuntimeConverter
-    assert CaptureParamTools is RuntimeCaptureParamTools
-    assert WaveSequenceTools is RuntimeWaveSequenceTools
-    assert Command is RuntimeCommand
-    assert PortConfigAcquirer is RuntimePortConfigAcquirer
-    assert RfSwitch is RuntimeRfSwitch
-    assert TargetBPC is RuntimeTargetBPC
-    assert Direction is RuntimeDirection
-    assert Sideband is RuntimeSideband
-    assert RuntimeDefaultSideband == DEFAULT_SIDEBAND
+    assert legacy.QubeCalib is FacadeQubeCalib
+    assert legacy.Executor is RuntimeExecutor
+    assert legacy.BoxPool is RuntimeBoxPool
+    assert legacy.Sequencer is runtime_sequencer.Sequencer
+    assert legacy.Converter is runtime_sequencer.Converter
+    assert legacy.CaptureParamTools is runtime_sequencer.CaptureParamTools
+    assert legacy.WaveSequenceTools is runtime_sequencer.WaveSequenceTools
+    assert legacy.Command is runtime_commands.Command
+    assert legacy.PortConfigAcquirer is runtime_commands.PortConfigAcquirer
+    assert legacy.RfSwitch is runtime_commands.RfSwitch
+    assert legacy.TargetBPC is runtime_commands.TargetBPC
+    assert legacy.Direction is runtime_sequencer.Direction
+    assert legacy.Sideband is runtime_sequencer.Sideband
+    assert runtime_sequencer.DEFAULT_SIDEBAND == legacy.DEFAULT_SIDEBAND
