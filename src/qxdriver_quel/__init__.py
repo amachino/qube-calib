@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from qubecalib import neopulse
-
 if TYPE_CHECKING:
+    import qubecalib.neopulse as neopulse
     from qubecalib.qubecalib import QubeCalib, Sequencer
 
 __all__ = [
@@ -21,4 +20,8 @@ def __getattr__(name: str):
         from qubecalib.qubecalib import QubeCalib, Sequencer
 
         return {"QubeCalib": QubeCalib, "Sequencer": Sequencer}[name]
+    if name == "neopulse":
+        from qubecalib import neopulse
+
+        return neopulse
     raise AttributeError(name)
