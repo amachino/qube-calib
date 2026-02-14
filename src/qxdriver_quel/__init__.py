@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+import importlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import qubecalib.neopulse as neopulse
-
     from qxdriver_quel.qubecalib import QubeCalib, Sequencer
 
 __all__ = [
@@ -22,7 +21,5 @@ def __getattr__(name: str):
 
         return {"QubeCalib": QubeCalib, "Sequencer": Sequencer}[name]
     if name == "neopulse":
-        from qubecalib import neopulse
-
-        return neopulse
+        return importlib.import_module("qxdriver_quel.neopulse")
     raise AttributeError(name)
