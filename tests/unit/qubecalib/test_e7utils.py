@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import numpy as np
-from qubecalib.e7utils import CaptureParamTools, WaveSequenceTools
+import pytest
+from qubecalib.e7utils import (
+    CaptureParamTools,
+    WaveSequenceTools,
+    _convert_cap_sampled_sequence_to_blanks_and_durations_chain,
+    _convert_gen_sampled_sequence_to_blanks_and_waves_chain,
+)
 from qubecalib.neopulse import (
     CapSampledSequence,
     CapSampledSubSequence,
@@ -75,3 +81,102 @@ def test_wave_create_accepts_single_subsequence() -> None:
     )
 
     assert wseq.num_chunks == 1
+
+
+def test_convert_gen_chain_handles_none_blanks() -> None:
+    """Given optional blanks are None, when converting gen chain, then they are normalized."""
+    sequence = GenSampledSequence(
+        target_name="RQ00",
+        prev_blank=4,
+        post_blank=5,
+        sub_sequences=[
+            GenSampledSubSequence(
+                real=np.array([0.0, 0.1, 0.2]),
+                imag=np.array([0.0, 0.0, 0.0]),
+                repeats=1,
+                post_blank=None,
+            ),
+            GenSampledSubSequence(
+                real=np.array([0.3, 0.4]),
+                imag=np.array([0.0, 0.0]),
+                repeats=1,
+                post_blank=7,
+            ),
+        ],
+    )
+
+    chain = _convert_gen_sampled_sequence_to_blanks_and_waves_chain(sequence)
+
+    assert chain == [4, 3, 0, 2, 12]
+
+
+def test_convert_cap_chain_merges_blank_bridge_and_last_blank() -> None:
+    """Given nested capture blanks, when converting cap chain, then bridge and tail are merged."""
+    sequence = CapSampledSequence(
+        target_name="RQ00",
+        prev_blank=4,
+        post_blank=13,
+        repeats=1,
+        sub_sequences=[
+            CapSampledSubSequence(
+                capture_slots=[
+                    CaptureSlots(
+                        duration=8,
+                        post_blank=2,
+                        original_duration=8.0,
+                        original_post_blank=2.0,
+                    )
+                ],
+                prev_blank=6,
+                post_blank=3,
+                original_prev_blank=6.0,
+                original_post_blank=3.0,
+                repeats=1,
+            ),
+            CapSampledSubSequence(
+                capture_slots=[
+                    CaptureSlots(
+                        duration=10,
+                        post_blank=11,
+                        original_duration=10.0,
+                        original_post_blank=11.0,
+                    )
+                ],
+                prev_blank=5,
+                post_blank=7,
+                original_prev_blank=5.0,
+                original_post_blank=7.0,
+                repeats=1,
+            ),
+        ],
+    )
+
+    chain = _convert_cap_sampled_sequence_to_blanks_and_durations_chain(sequence)
+
+    assert chain == [10, 8, 10, 10, 31]
+
+
+def test_wave_create_rejects_out_of_range_iq() -> None:
+    """Given iq magnitude greater than one, when creating wave sequence, then ValueError is raised."""
+    sequence = GenSampledSequence(
+        target_name="RQ00",
+        prev_blank=0,
+        post_blank=0,
+        repeats=1,
+        sub_sequences=[
+            GenSampledSubSequence(
+                real=np.array([1.1, 0.0]),
+                imag=np.array([0.0, 0.0]),
+                repeats=1,
+                post_blank=0,
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="magnitude of iq signal must not exceed 1"):
+        WaveSequenceTools.create(
+            sequence=sequence,
+            wait_words=0,
+            repeats=1,
+            interval_samples=64,
+        )

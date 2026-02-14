@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import math
 import sys
-from itertools import pairwise
+from collections.abc import MutableSequence
+from itertools import accumulate, pairwise
 
 import numpy as np
 
 from .e7compat import CaptureParam, DspUnit, IqWave, WaveSequence
-from .neopulse import CapSampledSequence, GenSampledSequence
+from .neopulse import CapSampledSequence, CaptureSlots, GenSampledSequence
 
 SAMPLING_PERIOD = 2
 
@@ -100,16 +101,15 @@ class WaveSequenceTools:
             Raised when any IQ sample magnitude exceeds 1.
         """
         chain = _convert_gen_sampled_sequence_to_blanks_and_waves_chain(sequence)
-        bounds = [sum(chain[: i + 1]) for i, _ in enumerate(chain)]
-        i = np.zeros(bounds[-1], dtype=int)
-        q = np.zeros(bounds[-1], dtype=int)
+        bounds = _cumulative_sums(chain)
+        i = np.zeros(bounds[-1], dtype=np.int32)
+        q = np.zeros(bounds[-1], dtype=np.int32)
         epsilon = sys.float_info.epsilon
         # NOTE: `bounds[::2]` includes one extra terminal boundary
         # (end of the final blank), so drop the tail.
         for begin, subseq in zip(bounds[::2][:-1], sequence.sub_sequences, strict=True):
-            if (
-                max(np.abs(subseq.real)) - 1 > epsilon
-                or max(np.abs(subseq.imag)) - 1 > epsilon
+            if np.any(np.abs(subseq.real) > 1 + epsilon) or np.any(
+                np.abs(subseq.imag) > 1 + epsilon
             ):
                 raise ValueError("magnitude of iq signal must not exceed 1")
             i[begin : begin + subseq.real.shape[0]] = (32767 * subseq.real).astype(int)
@@ -175,7 +175,7 @@ class CaptureParamTools:
         unit = CaptureParam.NUM_SAMPLES_IN_ADC_WORD
         chain = _convert_cap_sampled_sequence_to_blanks_and_durations_chain(sequence)
         chain[0] += sequence.padding
-        bounds = [sum(chain[:i]) for i, _ in enumerate(chain)]
+        bounds = _segment_starts(chain)
         aligned: list[int] = [
             0,
             # NOTE: Pre-blank is aligned to a 64-sample block boundary
@@ -457,17 +457,17 @@ def _convert_cap_sampled_sequence_to_blanks_and_durations_chain(
         else 0
     )
     chain: list[int] = [seq.prev_blank + seq.sub_sequences[0].prev_blank]
-    for subseq, blank in zip(seq.sub_sequences[:-1], blank_bridges, strict=True):
-        for slot in subseq.capture_slots[:-1]:
-            chain.extend(
-                [slot.duration, _require_int(slot.post_blank, context="slot blank")]
-            )
-        chain.extend([subseq.capture_slots[-1].duration, blank])
-    for slot in seq.sub_sequences[-1].capture_slots[:-1]:
-        chain.extend(
-            [slot.duration, _require_int(slot.post_blank, context="slot blank")]
+    for subseq, bridge_blank in zip(seq.sub_sequences[:-1], blank_bridges, strict=True):
+        _append_capture_slots(
+            chain=chain,
+            capture_slots=subseq.capture_slots,
+            last_blank=bridge_blank,
         )
-    chain.extend([seq.sub_sequences[-1].capture_slots[-1].duration, last_blank])
+    _append_capture_slots(
+        chain=chain,
+        capture_slots=seq.sub_sequences[-1].capture_slots,
+        last_blank=last_blank,
+    )
     return chain
 
 
@@ -526,26 +526,16 @@ def _convert_cap_sampled_sequence_to_blanks_and_durations_chain_use_original_val
         raise ValueError("original_prev_blank of subseq must be set")
 
     chain: list[int] = [int(prev_blank + subseq_prev_blank)]
-    for subseq, blank in zip(seq.sub_sequences[:-1], blank_bridges, strict=True):
-        for slot in subseq.capture_slots[:-1]:
-            chain.extend(
-                [
-                    int(slot.original_duration),
-                    _require_int(
-                        slot.original_post_blank, context="original slot blank"
-                    ),
-                ]
-            )
-        chain.extend([int(subseq.capture_slots[-1].original_duration), blank])
-    for slot in seq.sub_sequences[-1].capture_slots[:-1]:
-        chain.extend(
-            [
-                int(slot.original_duration),
-                _require_int(slot.original_post_blank, context="original slot blank"),
-            ]
+    for subseq, bridge_blank in zip(seq.sub_sequences[:-1], blank_bridges, strict=True):
+        _append_capture_slots_using_original_values(
+            chain=chain,
+            capture_slots=subseq.capture_slots,
+            last_blank=bridge_blank,
         )
-    chain.extend(
-        [int(seq.sub_sequences[-1].capture_slots[-1].original_duration), last_blank]
+    _append_capture_slots_using_original_values(
+        chain=chain,
+        capture_slots=seq.sub_sequences[-1].capture_slots,
+        last_blank=last_blank,
     )
     return chain
 
@@ -555,3 +545,44 @@ def _require_int(value: int | float | None, *, context: str) -> int:
     if value is None:
         raise ValueError(f"{context} must be set")
     return int(value)
+
+
+def _cumulative_sums(lengths: list[int]) -> list[int]:
+    """Return cumulative end positions for each segment length."""
+    return list(accumulate(lengths))
+
+
+def _segment_starts(lengths: list[int]) -> list[int]:
+    """Return segment start positions where the first start is zero."""
+    return list(accumulate(lengths[:-1], initial=0))
+
+
+def _append_capture_slots(
+    *,
+    chain: list[int],
+    capture_slots: MutableSequence[CaptureSlots],
+    last_blank: int,
+) -> None:
+    """Append one capture-subsequence slots into an alternating chain."""
+    for slot in capture_slots[:-1]:
+        chain.extend(
+            [slot.duration, _require_int(slot.post_blank, context="slot blank")]
+        )
+    chain.extend([capture_slots[-1].duration, last_blank])
+
+
+def _append_capture_slots_using_original_values(
+    *,
+    chain: list[int],
+    capture_slots: MutableSequence[CaptureSlots],
+    last_blank: int,
+) -> None:
+    """Append one capture-subsequence slots into an alternating chain."""
+    for slot in capture_slots[:-1]:
+        chain.extend(
+            [
+                int(slot.original_duration),
+                _require_int(slot.original_post_blank, context="original slot blank"),
+            ]
+        )
+    chain.extend([int(capture_slots[-1].original_duration), last_blank])
