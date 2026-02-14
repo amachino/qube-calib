@@ -62,3 +62,34 @@ def test_qxdriver_quel_runtime_and_config_modules_are_importable() -> None:
     assert BoxPool.__name__ == "BoxPool"
     assert Sequencer.__name__ == "Sequencer"
     assert SystemConfigDatabase.__name__ == "SystemConfigDatabase"
+
+
+def test_qxdriver_quel_compat_layer_exports_are_importable() -> None:
+    """Given unified compat layer imports, when importing from qxdriver_quel.compat, then symbols resolve."""
+    from qxdriver_quel.compat import (
+        Action,
+        BoxPool,
+        CapSampledSubSequence,
+        CaptureSlots,
+        GenSampledSubSequence,
+        QubeCalib,
+        QuBEMasterClient,
+        Quel1Box,
+        Quel1ConfigOption,
+        Sequencer,
+        SequencerClient,
+        Skew,
+    )
+
+    assert QubeCalib.__name__ == "QubeCalib"
+    assert Sequencer.__name__ == "Sequencer"
+    assert QuBEMasterClient.__name__ == "QuBEMasterClient"
+    assert SequencerClient.__name__ == "SequencerClient"
+    assert Action.__name__ == "Action"
+    assert GenSampledSubSequence.__name__ == "GenSampledSubSequence"
+    assert CapSampledSubSequence.__name__ == "CapSampledSubSequence"
+    assert CaptureSlots.__name__ == "CaptureSlots"
+    assert Skew.__name__ == "Skew"
+    assert BoxPool.__name__ == "BoxPool"
+    assert Quel1Box.__name__ == "Quel1Box"
+    assert Quel1ConfigOption.__name__ == "Quel1ConfigOption"
