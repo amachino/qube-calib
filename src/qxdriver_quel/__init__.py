@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import qubecalib.neopulse as neopulse
-    from qubecalib.qubecalib import QubeCalib, Sequencer
+
+    from qxdriver_quel.qubecalib import QubeCalib, Sequencer
 
 __all__ = [
     "QubeCalib",
@@ -17,7 +18,7 @@ __all__ = [
 
 def __getattr__(name: str):
     if name in {"QubeCalib", "Sequencer"}:
-        from qubecalib.qubecalib import QubeCalib, Sequencer
+        from qxdriver_quel.qubecalib import QubeCalib, Sequencer
 
         return {"QubeCalib": QubeCalib, "Sequencer": Sequencer}[name]
     if name == "neopulse":
