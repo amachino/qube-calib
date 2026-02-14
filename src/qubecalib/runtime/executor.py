@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 def _sequencer_type() -> type[Any]:
     """Resolve `Sequencer` lazily to avoid import cycles."""
-    from qubecalib.qubecalib import Sequencer
+    from qubecalib.runtime.sequencer_core import Sequencer
 
     return Sequencer
 
