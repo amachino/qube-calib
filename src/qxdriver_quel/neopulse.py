@@ -1069,9 +1069,7 @@ class Flushright(DequeWithContext):
                     raise ValueError("_root_node is None")
                 tree._active_node = branch._root_node
             elif isinstance(item, SequenceTree):
-                tree.append(
-                    Padding(0)
-                )
+                tree.append(Padding(0))
                 _tree = item
                 offset = max(tree._tree._tree.all)
                 offset = max(tree._tree._tree.all)
@@ -1650,8 +1648,6 @@ class Sampler:
                 sampling_period=sampling_period,
             )
             return self._sample(ts, self._waveforms), ts, None
-
-
 
 
 @dataclass

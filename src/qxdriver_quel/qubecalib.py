@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from qubecalib.facade import DEFAULT_SIDEBAND, Direction, QubeCalib, Sideband
-from qubecalib.runtime import sequencer as _sequencer_runtime
-from qubecalib.runtime.box_pool import BoxPool
-from qubecalib.runtime.executor import Executor
-from qubecalib.sysconfdb import SystemConfigDatabase
+from qxdriver_quel.facade import DEFAULT_SIDEBAND, Direction, QubeCalib, Sideband
+from qxdriver_quel.runtime import sequencer as _sequencer_runtime
+from qxdriver_quel.runtime.box_pool import BoxPool
+from qxdriver_quel.runtime.executor import Executor
+from qxdriver_quel.sysconfdb import SystemConfigDatabase
 
 Converter = _sequencer_runtime.Converter
 Command = _sequencer_runtime.Command

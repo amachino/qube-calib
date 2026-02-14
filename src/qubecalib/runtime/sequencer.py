@@ -1,27 +1,15 @@
-"""Compatibility re-exports for sequencer runtime primitives."""
+"""Compatibility shim exposing runtime sequencer APIs from qxdriver_quel."""
 
-from qubecalib.e7utils import CaptureParamTools, WaveSequenceTools
-from qubecalib.runtime.commands import (
-    Command,
-    PortConfigAcquirer,
-    RfSwitch,
-    TargetBPC,
-)
-from qubecalib.runtime.converter import DEFAULT_SIDEBAND, Converter, Direction, Sideband
-from qubecalib.runtime.sequencer_core import (
-    Sequencer,
-)
+from __future__ import annotations
 
-__all__ = [
-    "DEFAULT_SIDEBAND",
-    "CaptureParamTools",
-    "Command",
-    "Converter",
-    "Direction",
-    "PortConfigAcquirer",
-    "RfSwitch",
-    "Sequencer",
-    "Sideband",
-    "TargetBPC",
-    "WaveSequenceTools",
-]
+import importlib
+
+_sequencer = importlib.import_module("qxdriver_quel.runtime.sequencer")
+
+
+def __getattr__(name: str):
+    return getattr(_sequencer, name)
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(dir(_sequencer)))

@@ -107,6 +107,7 @@ class QuBEMasterClient:
         )
         return False
 
+
 __all__ = [
     "QuBEMasterClient",
     "SequencerClient",

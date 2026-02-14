@@ -5,12 +5,17 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING
 
+__version__ = "3.1.16beta3"
+
 if TYPE_CHECKING:
+    import qxdriver_quel.neopulse as neopulse
+
     from qxdriver_quel.qubecalib import QubeCalib, Sequencer
 
 __all__ = [
     "QubeCalib",
     "Sequencer",
+    "__version__",
     "neopulse",
 ]
 

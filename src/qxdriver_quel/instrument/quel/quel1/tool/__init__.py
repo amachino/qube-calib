@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from qubecalib.instrument.quel.quel1.tool import (
-    Skew,
+from qxdriver_quel.instrument.quel.quel1.tool.common import (
     create_sysdb_items_qube_riken_a,
     create_sysdb_items_quel1_riken8,
 )
+from qxdriver_quel.instrument.quel.quel1.tool.skew import Skew
 
 __all__ = [
     "Skew",

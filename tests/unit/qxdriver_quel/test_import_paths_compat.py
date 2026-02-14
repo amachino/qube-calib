@@ -46,3 +46,19 @@ def test_qxdriver_quel_e7compat_exports_are_importable() -> None:
     assert CaptureParam.__name__ == "CaptureParam"
     assert WaveSequence.__name__ == "WaveSequence"
     assert DspUnit.__name__ == "DspUnit"
+
+
+def test_qxdriver_quel_runtime_and_config_modules_are_importable() -> None:
+    """Given runtime/config module paths, when importing from qxdriver_quel, then compatibility symbols resolve."""
+    from qxdriver_quel import __version__
+    from qxdriver_quel.facade import QubeCalib
+    from qxdriver_quel.qubecalib import Executor
+    from qxdriver_quel.runtime import BoxPool, Sequencer
+    from qxdriver_quel.sysconfdb import SystemConfigDatabase
+
+    assert isinstance(__version__, str)
+    assert QubeCalib.__name__ == "QubeCalib"
+    assert Executor.__name__ == "Executor"
+    assert BoxPool.__name__ == "BoxPool"
+    assert Sequencer.__name__ == "Sequencer"
+    assert SystemConfigDatabase.__name__ == "SystemConfigDatabase"
