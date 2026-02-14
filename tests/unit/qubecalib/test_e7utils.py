@@ -180,3 +180,52 @@ def test_wave_create_rejects_out_of_range_iq() -> None:
             repeats=1,
             interval_samples=64,
         )
+
+
+def test_wave_create_places_subsequences_at_expected_offsets() -> None:
+    """Given multiple subsequences and blanks, when creating wave sequence, then iq samples are written at expected offsets."""
+    sequence = GenSampledSequence(
+        target_name="RQ00",
+        prev_blank=2,
+        post_blank=4,
+        repeats=1,
+        sub_sequences=[
+            GenSampledSubSequence(
+                real=np.array([0.5, -0.5]),
+                imag=np.array([0.0, 0.25]),
+                repeats=1,
+                post_blank=3,
+            ),
+            GenSampledSubSequence(
+                real=np.array([0.25, -0.25]),
+                imag=np.array([0.5, -0.5]),
+                repeats=1,
+                post_blank=1,
+            ),
+        ],
+    )
+
+    wseq = WaveSequenceTools.create(
+        sequence=sequence,
+        wait_words=0,
+        repeats=1,
+        interval_samples=256,
+    )
+
+    samples = wseq.chunk(0).wave_data.samples
+    expected_head = np.array(
+        [
+            [0, 0],  # leading blank
+            [0, 0],  # leading blank
+            [16383, 0],  # subseq-1 sample-0
+            [-16383, 8191],  # subseq-1 sample-1
+            [0, 0],  # inter-subseq blank
+            [0, 0],  # inter-subseq blank
+            [0, 0],  # inter-subseq blank
+            [8191, 16383],  # subseq-2 sample-0
+            [-8191, -16383],  # subseq-2 sample-1
+        ],
+        dtype=np.float32,
+    )
+
+    np.testing.assert_array_equal(samples[:9], expected_head)

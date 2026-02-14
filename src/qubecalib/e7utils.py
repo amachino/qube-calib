@@ -102,37 +102,40 @@ class WaveSequenceTools:
         ValueError
             Raised when any IQ sample magnitude exceeds 1.
         """
-        # Flatten the sequence into an alternating [blank, wave, ...] timing chain.
+        # Flatten once to get the total sample count including all blanks.
         chain = _convert_gen_sampled_sequence_to_blanks_and_waves_chain(sequence)
-        # Compute exclusive end offsets for each segment.
-        bounds = _cumulative_sums(chain)
+        total_samples = sum(chain)
         # Allocate integer buffers because samples are quantized before upload.
-        i = np.zeros(bounds[-1], dtype=np.int32)
-        q = np.zeros(bounds[-1], dtype=np.int32)
+        i = np.zeros(total_samples, dtype=np.int32)
+        q = np.zeros(total_samples, dtype=np.int32)
         # Small tolerance to ignore tiny floating-point overshoots around +/-1.
         epsilon = sys.float_info.epsilon
-        # NOTE: `bounds[::2]` includes one extra terminal boundary
-        # (end of the final blank), so drop the tail.
-        # Example:
-        #   chain  = [2, 4, 3, 5, 1]            # [blank, wave, blank, wave, blank]
-        #   bounds = [2, 6, 9, 14, 15]          # cumulative ends
-        #   bounds[::2] = [2, 9, 15]
-        # The first two values (2, 9) are wave starts, but 15 is only the end of
-        # the final blank and does not correspond to any subsequence start.
-        wave_start_bounds = bounds[::2][:-1]
-        for start, subseq in zip(wave_start_bounds, sequence.sub_sequences, strict=True):
+        # Walk through subsequences while tracking the absolute write offset.
+        start = sequence.prev_blank
+        for subseq in sequence.sub_sequences:
             # Input IQ is expected to be normalized to [-1, 1].
             if np.any(np.abs(subseq.real) > 1 + epsilon) or np.any(
                 np.abs(subseq.imag) > 1 + epsilon
             ):
                 raise ValueError("magnitude of iq signal must not exceed 1")
+            stop = start + subseq.real.shape[0]
             # Quantize I/Q to DAC scale and write into the corresponding interval.
-            i[start : start + subseq.real.shape[0]] = (
-                IQ_QUANTIZATION_SCALE * subseq.real
-            ).astype(int)
-            q[start : start + subseq.imag.shape[0]] = (
-                IQ_QUANTIZATION_SCALE * subseq.imag
-            ).astype(int)
+            # The cast to int32 happens on write because `out` points to int32 slices.
+            np.multiply(
+                subseq.real,
+                IQ_QUANTIZATION_SCALE,
+                out=i[start:stop],
+                casting="unsafe",
+            )
+            np.multiply(
+                subseq.imag,
+                IQ_QUANTIZATION_SCALE,
+                out=q[start:stop],
+                casting="unsafe",
+            )
+            # Each subsequence contributes its own trailing blank.
+            start = stop + (subseq.post_blank or 0)
+
         # Use sequence-level repeats when available; otherwise use the fallback.
         wseq = WaveSequence(
             num_wait_words=wait_words,
@@ -141,8 +144,9 @@ class WaveSequenceTools:
 
         # Convert to e7-compatible Nx2 IQ format and pad to a full wave block.
         s = IqWave.convert_to_iq_format(i, q, WaveSequence.NUM_SAMPLES_IN_WAVE_BLOCK)
-        # Calculate the waveform duration in AWG words.
-        total_duration_in_words = int(len(s) // WaveSequence.NUM_SAMPLES_IN_AWG_WORD)
+        # `convert_to_iq_format` pads to wave-block boundaries (64 samples), and one
+        # AWG word is 4 samples, so this division is exact (no ceil/floor ambiguity).
+        total_duration_in_words = len(s) // WaveSequence.NUM_SAMPLES_IN_AWG_WORD
         wseq.add_chunk(
             iq_samples=s,
             # NOTE: If `interval_words` came from floor conversion, this blank
@@ -210,7 +214,7 @@ class CaptureParamTools:
                 math.floor(bounds[1] / (CAPTURE_PRE_BLANK_ALIGNMENT_WORDS * unit))
                 * CAPTURE_PRE_BLANK_ALIGNMENT_WORDS
                 * unit,
-            # Round all later boundaries down to ADC-word granularity.
+                # Round all later boundaries down to ADC-word granularity.
             ]
             + [math.floor(bound / unit) * unit for bound in bounds[2:]]
         )
@@ -601,12 +605,6 @@ def _require_int(value: int | float | None, *, context: str) -> int:
     if value is None:
         raise ValueError(f"{context} must be set")
     return int(value)
-
-
-def _cumulative_sums(lengths: list[int]) -> list[int]:
-    """Return cumulative end positions for each segment length."""
-    # [a,b,c] -> [a,a+b,a+b+c]
-    return list(accumulate(lengths))
 
 
 def _segment_starts(lengths: list[int]) -> list[int]:
