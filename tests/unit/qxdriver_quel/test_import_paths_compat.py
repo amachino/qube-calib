@@ -37,3 +37,12 @@ def test_qxdriver_quel_driver_submodules_are_importable() -> None:
 
     assert hasattr(single, "Action")
     assert hasattr(multi, "Action")
+
+
+def test_qxdriver_quel_e7compat_exports_are_importable() -> None:
+    """Given legacy e7 compatibility types, when importing from qxdriver_quel, then required symbols resolve."""
+    from qxdriver_quel.e7compat import CaptureParam, DspUnit, WaveSequence
+
+    assert CaptureParam.__name__ == "CaptureParam"
+    assert WaveSequence.__name__ == "WaveSequence"
+    assert DspUnit.__name__ == "DspUnit"
