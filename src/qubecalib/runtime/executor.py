@@ -16,48 +16,11 @@ from qubecalib.clockmaster_compat import SequencerClient, register_box
 from qubecalib.instrument.quel.quel1 import driver as direct
 from qubecalib.resource_map import ResourceMap, create_target_resource_map
 from qubecalib.runtime.box_pool import BoxPool
+from qubecalib.runtime.commands import Command
+from qubecalib.runtime.sequencer_core import Sequencer
 from qubecalib.sysconfdb import BoxSetting, SystemConfigDatabase
 
 logger = logging.getLogger(__name__)
-
-
-def _sequencer_type() -> type[Any]:
-    """Resolve `Sequencer` lazily to avoid import cycles."""
-    from qubecalib.runtime.sequencer_core import Sequencer
-
-    return Sequencer
-
-
-def _build_sequencer(
-    *,
-    gen_sampled_sequence: dict[str, Any],
-    cap_sampled_sequence: dict[str, Any],
-    resource_map: ResourceMap,
-    group_items_by_target: dict[str, Any],
-    time_offset: dict[str, int],
-    time_to_start: dict[str, int],
-    interval: float | None,
-    sysdb: SystemConfigDatabase,
-    driver: direct.Quel1System | None,
-) -> Any:
-    """Construct a `Sequencer` lazily to avoid import cycles."""
-    sequencer_type = _sequencer_type()
-    return sequencer_type(
-        gen_sampled_sequence=gen_sampled_sequence,
-        cap_sampled_sequence=cap_sampled_sequence,
-        resource_map=resource_map,
-        group_items_by_target=group_items_by_target,
-        time_offset=time_offset,
-        time_to_start=time_to_start,
-        interval=interval,
-        sysdb=sysdb,
-        driver=driver,
-    )
-
-
-def _is_sequencer(command: Any) -> bool:
-    """Return whether a queued command is a `Sequencer` instance."""
-    return isinstance(command, _sequencer_type())
 
 
 class Executor:
@@ -78,7 +41,7 @@ class Executor:
         *,
         quel1system: direct.Quel1System | None = None,
     ) -> None:
-        self._work_queue: Final[deque[Any]] = deque()
+        self._work_queue: Final[deque[Command]] = deque()
         self._config_buffer: Final[deque[Any]] = deque()
         self.sysdb = sysdb
         self.quel1system: Final[direct.Quel1System | None] = quel1system
@@ -99,19 +62,18 @@ class Executor:
 
     def collect_boxes(self) -> set[Any]:
         """Collect unique box names referenced by queued sequencer commands."""
-        sequencer_type = _sequencer_type()
         return {
             rmap["box"].box_name
             for command in self._work_queue
-            if isinstance(command, sequencer_type)
+            if isinstance(command, Sequencer)
             for rmaps in command.resource_map.values()
             for rmap in rmaps
             if isinstance(rmap["box"], BoxSetting)
         }
 
-    def collect_sequencers(self) -> set[Any]:
+    def collect_sequencers(self) -> set[Sequencer]:
         """Collect queued sequencer commands."""
-        return {command for command in self._work_queue if _is_sequencer(command)}
+        return {command for command in self._work_queue if isinstance(command, Sequencer)}
 
     def __iter__(self) -> Executor:
         """Return the iterator itself after clearing prior execution logs."""
@@ -133,12 +95,12 @@ class Executor:
                     "command que should include at least one Sequencer command."
                 )
             next_command = self._work_queue.pop()
-            if _is_sequencer(next_command):
+            if isinstance(next_command, Sequencer):
                 break
             next_command.execute(self._boxpool)
 
         for command in self._work_queue:
-            if _is_sequencer(command):
+            if isinstance(command, Sequencer):
                 results = next_command.execute(self._boxpool)
                 self._append_execution_log()
                 if not self._work_queue:
@@ -174,12 +136,12 @@ class Executor:
     def check_config(self) -> None:
         """Validate runtime configuration drift."""
 
-    def add_command(self, command: Any) -> None:
+    def add_command(self, command: Command) -> None:
         """Queue one command object for execution."""
         self._work_queue.appendleft(command)
 
     @property
-    def command_queue(self) -> deque[Any]:
+    def command_queue(self) -> deque[Command]:
         """Return the underlying command queue."""
         return self._work_queue
 
@@ -316,7 +278,7 @@ class Executor:
         targets = set(list(gen_sampled_sequence) + list(cap_sampled_sequence))
         resource_map = self._create_target_resource_map(targets)
         self.add_command(
-            _build_sequencer(
+            Sequencer(
                 gen_sampled_sequence=cast(dict[str, Any], gen_sampled_sequence),
                 cap_sampled_sequence=cast(dict[str, Any], cap_sampled_sequence),
                 resource_map=resource_map,
