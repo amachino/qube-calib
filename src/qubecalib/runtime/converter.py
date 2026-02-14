@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import functools
 import logging
 import math
-import operator
 import warnings
 from collections import Counter
 from collections.abc import MutableMapping
@@ -405,11 +403,16 @@ class Converter:
             for subseq, timings, offsets in zip(
                 seq.sub_sequences, timing_list, offset_list, strict=False
             ):
+                # NOTE: `strict=False` tolerates length mismatches by truncation.
+                # A mismatch can silently leave trailing subsequences uncorrected.
                 wave = subseq.real + 1j * subseq.imag
                 for (begin, end), (offsetb, _) in zip(timings, offsets, strict=False):
+                    # NOTE: Same truncation caveat as above for timing/offset pairs.
                     offset_phase = modulation_angular_frequency * offsetb
                     b = math.floor(begin / SAMPLING_PERIOD)
                     e = math.floor(end / SAMPLING_PERIOD)
+                    # NOTE: In-place mutation persists in the input sequence object
+                    # and can accumulate across repeated conversions.
                     wave[b:e] = wave[b:e] * np.exp(-1j * offset_phase)
                 subseq.real = np.real(wave)
                 subseq.imag = np.imag(wave)
@@ -456,6 +459,8 @@ class Converter:
         for seq in gen_sampled_sequence.values():
             padding = seq.padding
             subseq = seq.sub_sequences[0]
+            # NOTE: In-place mutation permanently prepends zeros to the first
+            # subsequence. Re-running conversion stacks padding.
             subseq.real = np.concatenate([np.zeros(padding), subseq.real])
             subseq.imag = np.concatenate([np.zeros(padding), subseq.imag])
         ids_muxed_sequences = {
@@ -621,7 +626,6 @@ class Converter:
         ValueError
             Raised when sequence geometries are not identical.
         """
-        cls.validate_geometry_identity(sequences)
         if not cls.validate_geometry_identity(sequences):
             raise ValueError(
                 "All geometry of sub sequences belonging to the same awg must be equal"
@@ -649,6 +653,8 @@ class Converter:
                     sequence.sub_sequences,
                     strict=False,
                 )
+                # NOTE: `strict=False` truncates on geometry mismatch between
+                # computed begin indices and subsequences.
             ]
             for target_name, sequence in sequences.items()
         }
@@ -689,17 +695,19 @@ class Converter:
         sequences: MutableMapping[str, GenSampledSequence],
     ) -> bool:
         """Validate that all sequence geometries are mutually consistent."""
-        _ = {
-            target_name: [
-                (_.real.shape, _.imag.shape, _.post_blank, _.repeats)
-                for _ in sequence.sub_sequences
+        geometries = [
+            [
+                (
+                    subseq.real.shape,
+                    subseq.imag.shape,
+                    subseq.post_blank,
+                    subseq.repeats,
+                )
+                for subseq in sequence.sub_sequences
             ]
-            for target_name, sequence in sequences.items()
-        }
-        return all(
-            functools.reduce(
-                operator.iadd,
-                [[geometry[0] == __ for __ in geometry] for _, geometry in _.items()],
-                [],
-            )
-        )
+            for sequence in sequences.values()
+        ]
+        if not geometries:
+            return True
+        reference_geometry = geometries[0]
+        return all(geometry == reference_geometry for geometry in geometries[1:])

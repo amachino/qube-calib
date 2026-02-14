@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import math
 import sys
-from collections.abc import MutableMapping
 from itertools import pairwise
-from typing import Any
 
 import numpy as np
 
@@ -15,32 +13,13 @@ from .neopulse import CapSampledSequence, GenSampledSequence
 
 SAMPLING_PERIOD = 2
 
+# Capture delay starts at the head of an input block (64 samples in e7awgsw).
+# Since 1 capture word = 4 samples, pre-blank alignment becomes 16 words.
+CAPTURE_PRE_BLANK_ALIGNMENT_WORDS = 16
+
 
 class WaveSequenceTools:
     """Helpers that convert generator sampled sequences into `WaveSequence`."""
-
-    @classmethod
-    def quantize_duration(
-        cls,
-        duration: float,
-        constrain: int = 10_240,
-    ) -> int:
-        """Quantize duration to a hardware-friendly period."""
-        return int(duration // constrain) * constrain
-
-    @classmethod
-    def validate_e7_compatibility(
-        cls,
-        sequences: MutableMapping[str, GenSampledSequence],
-    ) -> bool:
-        """Return whether all sequences satisfy legacy e7 constraints."""
-        _ = sequences
-        return False
-
-    @classmethod
-    def create_chunk(cls) -> MutableMapping[str, Any]:
-        """Return an empty legacy chunk container."""
-        return {}
 
     @classmethod
     def create(
@@ -78,6 +57,8 @@ class WaveSequenceTools:
             sequence=sequence,
             wait_words=wait_words,
             repeats=repeats,
+            # NOTE: Int truncates toward shorter intervals when not word-aligned.
+            # Effective interval can shrink by up to (unit - 1) samples.
             interval_words=int(interval_samples / unit),
         )
 
@@ -123,8 +104,8 @@ class WaveSequenceTools:
         i = np.zeros(bounds[-1], dtype=int)
         q = np.zeros(bounds[-1], dtype=int)
         epsilon = sys.float_info.epsilon
-        # `bounds[::2]` includes one extra terminal boundary (end of the final blank).
-        # We only need waveform start positions, one per subsequence, so drop the tail.
+        # NOTE: `bounds[::2]` includes one extra terminal boundary
+        # (end of the final blank), so drop the tail.
         for begin, subseq in zip(bounds[::2][:-1], sequence.sub_sequences, strict=True):
             if (
                 max(np.abs(subseq.real)) - 1 > epsilon
@@ -142,6 +123,8 @@ class WaveSequenceTools:
         total_duration_in_words = int(len(s) // WaveSequence.NUM_SAMPLES_IN_AWG_WORD)
         wseq.add_chunk(
             iq_samples=s,
+            # NOTE: If `interval_words` came from floor conversion, this blank
+            # is computed against the shortened interval definition.
             num_blank_words=interval_words - total_duration_in_words,
             num_repeats=1,
         )
@@ -195,7 +178,11 @@ class CaptureParamTools:
         bounds = [sum(chain[:i]) for i, _ in enumerate(chain)]
         aligned: list[int] = [
             0,
-            math.floor(bounds[1] / (16 * unit)) * 16 * unit,
+            # NOTE: Pre-blank is aligned to a 64-sample block boundary
+            # (16 capture words) before capture starts.
+            math.floor(bounds[1] / (CAPTURE_PRE_BLANK_ALIGNMENT_WORDS * unit))
+            * CAPTURE_PRE_BLANK_ALIGNMENT_WORDS
+            * unit,
         ] + [math.floor(bound / unit) * unit for bound in bounds[2:]]
         new_chain = [int((up - low) / unit) for low, up in pairwise(aligned)] + [
             int(chain[-1])
@@ -207,11 +194,12 @@ class CaptureParamTools:
             if new_chain[i] == 0:
                 if new_chain[i - 1] == 1:
                     raise ValueError("Capture is too short")
-                # Hardware requires post-blank >= 1 word for every sum section.
-                # Keep section boundaries almost unchanged by borrowing 1 word from the
-                # previous duration: (d, 0) -> (d - 1, 1). This shortens the previous
-                # integration window by 1 word (4 samples, 8 ns). If this is the last
-                # blank, only the final integration window becomes 1 word shorter.
+                # NOTE: Hardware requires post-blank >= 1 word for every section.
+                # Keep boundaries almost unchanged by borrowing 1 word:
+                # (d, 0) -> (d - 1, 1).
+                # This shortens the previous integration window by 1 word
+                # (4 samples, 8 ns). If this is the last blank, only the
+                # final integration window becomes 1 word shorter.
                 new_chain[i - 1] -= 1
                 new_chain[i] = 1
         capprm = CaptureParam()
@@ -401,11 +389,15 @@ def _convert_gen_sampled_sequence_to_blanks_and_waves_chain(
     """
     chain: list[int] = [sequence.prev_blank]
     for subseq in sequence.sub_sequences[:-1]:
+        # NOTE: `None` is treated as no additional blank (0).
+        # This makes "unset" and explicit zero equivalent here.
         chain.extend([subseq.real.shape[0], subseq.post_blank or 0])
     last_subseq = sequence.sub_sequences[-1]
     last_blank = (
         last_subseq.post_blank + sequence.post_blank
         if sequence.post_blank is not None and last_subseq.post_blank is not None
+        # NOTE: Same permissive fallback as above.
+        # Missing tail blank metadata is normalized to zero.
         else 0
     )
     chain.extend([last_subseq.real.shape[0], last_blank])
@@ -458,6 +450,9 @@ def _convert_cap_sampled_sequence_to_blanks_and_durations_chain(
             else None,
             context="last blank",
         )
+        # NOTE: Legacy behavior allows missing top-level tail blank by
+        # normalizing to zero; later alignment/constraint logic repairs
+        # the final shape.
         if seq.post_blank is not None
         else 0
     )
