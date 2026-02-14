@@ -1,18 +1,8 @@
-"""Direct driver exports for qxdriver_quel QuEL1 actions."""
+"""Direct driver exports for single/multi QuEL1 actions."""
 
-from __future__ import annotations
-
-from qubecalib.instrument.quel.quel1.driver import (
-    Action,
-    AwgId,
-    AwgSetting,
-    NamedBox,
-    Quel1PortType,
-    Quel1System,
-    RunitId,
-    RunitSetting,
-    TriggerSetting,
-)
+from .common import Action, AwgId, AwgSetting, RunitId, RunitSetting, TriggerSetting
+from .multi import NamedBox, Quel1System
+from .single import Quel1PortType
 
 __all__ = [
     "Action",
