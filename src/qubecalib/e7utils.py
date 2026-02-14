@@ -50,7 +50,29 @@ class WaveSequenceTools:
         repeats: int,
         interval_samples: int,
     ) -> WaveSequence:
-        """Create a `WaveSequence` from a sampled generator sequence."""
+        """
+        Convert one generator sampled sequence into a hardware `WaveSequence`.
+
+        The conversion normalizes time units from samples to AWG words and
+        delegates waveform packing and chunk creation to
+        `create_single_chunked_wave_sequence`.
+
+        Parameters
+        ----------
+        sequence : GenSampledSequence
+            Source sampled waveform sequence for one logical target.
+        wait_words : int
+            Initial wait length in AWG words before waveform emission.
+        repeats : int
+            Fallback repeat count when `sequence.repeats` is `None`.
+        interval_samples : int
+            Total interval length in samples.
+
+        Returns
+        -------
+        WaveSequence
+            Converted one-chunk wave sequence compatible with legacy e7 APIs.
+        """
         unit = WaveSequence.NUM_SAMPLES_IN_AWG_WORD
         return cls.create_single_chunked_wave_sequence(
             sequence=sequence,
@@ -67,13 +89,43 @@ class WaveSequenceTools:
         repeats: int,
         interval_words: int,
     ) -> WaveSequence:
-        """Create one-wavechunk `WaveSequence` from the given generator sequence."""
+        """
+        Build a single-chunk `WaveSequence` from a generator sampled sequence.
+
+        The method flattens `[blank, wave, blank, ...]` timing into absolute
+        boundaries, writes each subsequence into one dense IQ buffer, converts it
+        to the legacy packed format, and appends one chunk with post-blank chosen
+        to satisfy `interval_words`.
+
+        Parameters
+        ----------
+        sequence : GenSampledSequence
+            Source sampled sequence.
+        wait_words : int
+            Initial wait length in AWG words.
+        repeats : int
+            Fallback repeat count when `sequence.repeats` is `None`.
+        interval_words : int
+            Target interval length in AWG words.
+
+        Returns
+        -------
+        WaveSequence
+            Wave sequence with exactly one chunk.
+
+        Raises
+        ------
+        ValueError
+            Raised when any IQ sample magnitude exceeds 1.
+        """
         chain = _convert_gen_sampled_sequence_to_blanks_and_waves_chain(sequence)
         bounds = [sum(chain[: i + 1]) for i, _ in enumerate(chain)]
         i = np.zeros(bounds[-1], dtype=int)
         q = np.zeros(bounds[-1], dtype=int)
         epsilon = sys.float_info.epsilon
-        for begin, subseq in zip(bounds[::2], sequence.sub_sequences, strict=True):
+        # `bounds[::2]` includes one extra terminal boundary (end of the final blank).
+        # We only need waveform start positions, one per subsequence, so drop the tail.
+        for begin, subseq in zip(bounds[::2][:-1], sequence.sub_sequences, strict=True):
             if (
                 max(np.abs(subseq.real)) - 1 > epsilon
                 or max(np.abs(subseq.imag)) - 1 > epsilon
@@ -107,7 +159,36 @@ class CaptureParamTools:
         repeats: int,
         interval_samples: int,
     ) -> CaptureParam:
-        """Create a `CaptureParam` aligned to hardware constraints."""
+        """
+        Convert one capture sampled sequence into legacy `CaptureParam`.
+
+        This conversion maps sample-domain capture slots to ADC-word-domain
+        sections, applies required boundary alignment, restores interval-length
+        consistency, and enforces hardware constraints such as non-zero
+        post-blank words.
+
+        Parameters
+        ----------
+        sequence : CapSampledSequence
+            Source capture sampled sequence for one logical target.
+        capture_delay_words : int
+            Additional delay (ADC words) applied before the first section.
+        repeats : int
+            Number of integration sections.
+        interval_samples : int
+            Total interval length in samples.
+
+        Returns
+        -------
+        CaptureParam
+            Capture parameter object compatible with legacy e7 APIs.
+
+        Raises
+        ------
+        ValueError
+            Raised when an aligned section would become too short to keep
+            post-blank constraints (`Capture is too short`).
+        """
         unit = CaptureParam.NUM_SAMPLES_IN_ADC_WORD
         chain = _convert_cap_sampled_sequence_to_blanks_and_durations_chain(sequence)
         chain[0] += sequence.padding
@@ -126,6 +207,11 @@ class CaptureParamTools:
             if new_chain[i] == 0:
                 if new_chain[i - 1] == 1:
                     raise ValueError("Capture is too short")
+                # Hardware requires post-blank >= 1 word for every sum section.
+                # Keep section boundaries almost unchanged by borrowing 1 word from the
+                # previous duration: (d, 0) -> (d - 1, 1). This shortens the previous
+                # integration window by 1 word (4 samples, 8 ns). If this is the last
+                # blank, only the final integration window becomes 1 word shorter.
                 new_chain[i - 1] -= 1
                 new_chain[i] = 1
         capprm = CaptureParam()
@@ -299,7 +385,20 @@ class CaptureParamTools:
 def _convert_gen_sampled_sequence_to_blanks_and_waves_chain(
     sequence: GenSampledSequence,
 ) -> list[int]:
-    """Convert generator sampled sequence to `[blank, wave, blank, ...]` chain."""
+    """
+    Convert a generator sequence into a `[blank, wave, blank, ...]` chain.
+
+    Parameters
+    ----------
+    sequence : GenSampledSequence
+        Source generator sampled sequence.
+
+    Returns
+    -------
+    list[int]
+        Alternating blank/wave lengths in samples. The first element is the
+        leading blank and the last element is the trailing blank.
+    """
     chain: list[int] = [sequence.prev_blank]
     for subseq in sequence.sub_sequences[:-1]:
         chain.extend([subseq.real.shape[0], subseq.post_blank or 0])
@@ -316,7 +415,27 @@ def _convert_gen_sampled_sequence_to_blanks_and_waves_chain(
 def _convert_cap_sampled_sequence_to_blanks_and_durations_chain(
     sequence: CapSampledSequence,
 ) -> list[int]:
-    """Convert capture sampled sequence to `[blank, duration, blank, ...]` chain."""
+    """
+    Convert a capture sequence into a `[blank, duration, blank, ...]` chain.
+
+    The conversion merges nested blank contributors (slot/subsequence/top-level)
+    into bridge blanks between capture durations.
+
+    Parameters
+    ----------
+    sequence : CapSampledSequence
+        Source capture sampled sequence.
+
+    Returns
+    -------
+    list[int]
+        Alternating blank/duration lengths in samples.
+
+    Raises
+    ------
+    ValueError
+        Raised when any required blank value is missing.
+    """
     seq = sequence
     blank_bridges = [
         _require_int(
@@ -329,15 +448,18 @@ def _convert_cap_sampled_sequence_to_blanks_and_durations_chain(
         )
         for lo, hi in zip(seq.sub_sequences[:-1], seq.sub_sequences[1:], strict=True)
     ]
-    last_blank = _require_int(
-        seq.sub_sequences[-1].capture_slots[-1].post_blank
-        + seq.sub_sequences[-1].post_blank
-        + seq.post_blank
-        if seq.sub_sequences[-1].capture_slots[-1].post_blank is not None
-        and seq.sub_sequences[-1].post_blank is not None
-        and seq.post_blank is not None
-        else None,
-        context="last blank",
+    last_blank = (
+        _require_int(
+            seq.sub_sequences[-1].capture_slots[-1].post_blank
+            + seq.sub_sequences[-1].post_blank
+            + seq.post_blank
+            if seq.sub_sequences[-1].capture_slots[-1].post_blank is not None
+            and seq.sub_sequences[-1].post_blank is not None
+            else None,
+            context="last blank",
+        )
+        if seq.post_blank is not None
+        else 0
     )
     chain: list[int] = [seq.prev_blank + seq.sub_sequences[0].prev_blank]
     for subseq, blank in zip(seq.sub_sequences[:-1], blank_bridges, strict=True):
@@ -357,7 +479,25 @@ def _convert_cap_sampled_sequence_to_blanks_and_durations_chain(
 def _convert_cap_sampled_sequence_to_blanks_and_durations_chain_use_original_values(
     sequence: CapSampledSequence,
 ) -> list[int]:
-    """Convert capture sampled sequence chain using original-duration values."""
+    """
+    Convert capture timing to a chain using original (pre-rounding) values.
+
+    Parameters
+    ----------
+    sequence : CapSampledSequence
+        Source capture sampled sequence.
+
+    Returns
+    -------
+    list[int]
+        Alternating blank/duration lengths computed from original values and
+        cast to integers.
+
+    Raises
+    ------
+    ValueError
+        Raised when required original blank fields are missing.
+    """
     seq = sequence
     blank_bridges = [
         _require_int(

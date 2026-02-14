@@ -76,7 +76,47 @@ class Converter:
         line_param0: tuple[float, float, float] = (1, 0, 0),
         line_param1: tuple[float, float, float] = (0, 1, 0),
     ) -> dict[tuple[str, Quel1PortType, int], WaveSequence | CaptureParam]:
-        """Convert sampled sequences into capture/generation settings."""
+        """
+        Convert sampled sequences into per-device generation/capture settings.
+
+        The method dispatches conversion to capture and generation pipelines,
+        each filtered by target availability, and merges the resulting settings
+        map keyed by `(box_name, port, channel_or_runit)`.
+
+        Parameters
+        ----------
+        gen_sampled_sequence : dict[str, GenSampledSequence]
+            Generator sampled sequences indexed by target name.
+        cap_sampled_sequence : dict[str, CapSampledSequence]
+            Capture sampled sequences indexed by target name.
+        resource_map : dict[str, dict[str, BoxSetting | PortSetting | int | dict[str, float]]]
+            Logical-to-physical resource mapping for each target.
+        port_config : dict[str, PortConfigAcquirer]
+            Port configuration indexed by target name.
+        repeats : int
+            Number of shot repeats used by conversion.
+        interval : float
+            Sequence interval in nanoseconds.
+        integral_mode : str
+            Integration mode selector for capture conversion.
+        dsp_demodulation : bool
+            Whether to enable hardware DSP demodulation.
+        software_demodulation : bool
+            Whether software demodulation is requested.
+        enable_sum : bool
+            Whether to enable SUM DSP.
+        enable_classification : bool, default False
+            Whether to enable classification DSP.
+        line_param0 : tuple[float, float, float], default (1, 0, 0)
+            Decision boundary parameter set 0 for classification.
+        line_param1 : tuple[float, float, float], default (0, 1, 0)
+            Decision boundary parameter set 1 for classification.
+
+        Returns
+        -------
+        dict[tuple[str, Quel1PortType, int], WaveSequence | CaptureParam]
+            Device-specific setting map for both AWG and capture units.
+        """
         capseq = cls.convert_to_cap_device_specific_sequence(
             gen_sampled_sequence=gen_sampled_sequence,
             cap_sampled_sequence=cap_sampled_sequence,
@@ -137,7 +177,56 @@ class Converter:
         line_param0: tuple[float, float, float] = (1, 0, 0),
         line_param1: tuple[float, float, float] = (0, 1, 0),
     ) -> dict[tuple[str, Quel1PortType, int], CaptureParam]:
-        """Build capture settings from sampled sequences."""
+        """
+        Convert capture sampled sequences into per-runit `CaptureParam` objects.
+
+        The conversion resolves modulation frequencies and hardware IDs,
+        validates one-target-per-runit constraints, builds base `CaptureParam`
+        values, and applies DSP options (integration/demodulation/sum/classifier)
+        according to flags.
+
+        Parameters
+        ----------
+        gen_sampled_sequence : dict[str, GenSampledSequence]
+            Generator sampled sequences indexed by target name. This argument is
+            accepted for API symmetry and currently not used directly.
+        cap_sampled_sequence : dict[str, CapSampledSequence]
+            Capture sampled sequences indexed by target name.
+        resource_map : dict[str, dict[str, BoxSetting | PortSetting | int | dict[str, float]]]
+            Logical-to-physical resource mapping for capture targets.
+        port_config : dict[str, PortConfigAcquirer]
+            Port configuration indexed by target name.
+        repeats : int
+            Number of integration repeats.
+        interval : float
+            Sequence interval in nanoseconds.
+        integral_mode : str
+            Integration mode selector (for example, `"integral"`).
+        dsp_demodulation : bool
+            Whether to enable capture DSP demodulation.
+        software_demodulation : bool
+            Whether software demodulation is requested.
+        enable_sum : bool
+            Whether to enable SUM DSP.
+        enable_classification : bool, default False
+            Whether to enable classification DSP.
+        line_param0 : tuple[float, float, float], default (1, 0, 0)
+            Decision boundary parameter set 0.
+        line_param1 : tuple[float, float, float], default (0, 1, 0)
+            Decision boundary parameter set 1.
+
+        Returns
+        -------
+        dict[tuple[str, Quel1PortType, int], CaptureParam]
+            Capture parameters keyed by physical runit identifier.
+
+        Raises
+        ------
+        ValueError
+            Raised when multiple targets are mapped to the same capture unit.
+        """
+        _ = gen_sampled_sequence
+        _ = software_demodulation
         ndelay_or_nwait_by_target = {
             target_name: rmap["port"].ndelay_or_nwait[rmap["channel_number"]]
             if rmap["port"].ndelay_or_nwait is not None
@@ -228,12 +317,41 @@ class Converter:
         repeats: int,
         interval: float,
     ) -> dict[tuple[str, Quel1PortType, int], WaveSequence]:
-        # for target_name, gss in gen_sampled_sequence.items():
-        #     print(target_name, gss.padding, end=" ")
-        #     # for sub in gss.sub_sequences:
-        #     #     print(sub.padding, end=" ")
-        # print()
-        """Build generation settings from sampled sequences."""
+        """
+        Convert generator sampled sequences into per-AWG `WaveSequence` objects.
+
+        The conversion resolves modulation frequency and physical IDs, applies
+        readout phase offsets when capture offsets are available, groups targets
+        by AWG channel, multiplexes grouped waveforms, and finally creates
+        hardware-compatible `WaveSequence` values.
+
+        Parameters
+        ----------
+        gen_sampled_sequence : dict[str, GenSampledSequence]
+            Generator sampled sequences indexed by target name.
+        cap_sampled_sequence : dict[str, CapSampledSequence]
+            Capture sampled sequences used for optional readout offset alignment.
+        resource_map : dict[str, dict[str, BoxSetting | PortSetting | int | dict[str, float]]]
+            Logical-to-physical resource mapping for generator targets.
+        port_config : dict[str, PortConfigAcquirer]
+            Port configuration indexed by target name.
+        repeats : int
+            Repeat count used when building each `WaveSequence`.
+        interval : float
+            Sequence interval in nanoseconds.
+
+        Returns
+        -------
+        dict[tuple[str, Quel1PortType, int], WaveSequence]
+            Wave sequences keyed by physical AWG identifier.
+
+        Raises
+        ------
+        TypeError
+            Raised when required `resource_map` entries have invalid types.
+        ValueError
+            Raised when readout timing/offset metadata is partially missing.
+        """
         SAMPLING_PERIOD = 2
 
         targets_freqs: MutableMapping[str, float] = {}
@@ -479,7 +597,30 @@ class Converter:
         sequences: MutableMapping[str, GenSampledSequence],
         modfreqs: MutableMapping[str, float],
     ) -> GenSampledSequence:
-        """Collapse multiple target waveforms into one multiplexed sequence."""
+        """
+        Multiplex multiple target waveforms into a single sampled sequence.
+
+        All input sequences must share the same geometry. Each target waveform is
+        up-converted by its modulation frequency and summed per subsequence in
+        the time domain.
+
+        Parameters
+        ----------
+        sequences : MutableMapping[str, GenSampledSequence]
+            Generator sampled sequences to multiplex.
+        modfreqs : MutableMapping[str, float]
+            Modulation frequencies in GHz keyed by target name.
+
+        Returns
+        -------
+        GenSampledSequence
+            Multiplexed sampled sequence with combined complex waveform.
+
+        Raises
+        ------
+        ValueError
+            Raised when sequence geometries are not identical.
+        """
         cls.validate_geometry_identity(sequences)
         if not cls.validate_geometry_identity(sequences):
             raise ValueError(
@@ -562,4 +703,3 @@ class Converter:
                 [],
             )
         )
-
