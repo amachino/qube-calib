@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from qubecalib.neopulse import RaisedCosFlatTop, Waveform
+from qxdriver_quel.neopulse import RaisedCosFlatTop, Waveform
 
 
 def test_inheritance() -> None:

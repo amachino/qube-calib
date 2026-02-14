@@ -2,11 +2,11 @@ import os
 from typing import Generator
 
 import pytest
-from qubecalib.qubecalib import QubeCalib
+from qxdriver_quel.qubecalib import QubeCalib
 
 
 @pytest.fixture(name="qc4")
-def qubecalib() -> Generator[QubeCalib, None, None]:
+def qxdriver_quel() -> Generator[QubeCalib, None, None]:
     """Return a QubeCalib object with a sample config file."""
     cwd = os.getcwd()
     os.chdir(os.path.dirname(__file__))

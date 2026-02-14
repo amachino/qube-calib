@@ -1,11 +1,11 @@
 """Runtime module export compatibility tests."""
 
-from qubecalib import qubecalib as legacy
-from qubecalib.facade import QubeCalib as FacadeQubeCalib
-from qubecalib.runtime import commands as runtime_commands
-from qubecalib.runtime import sequencer as runtime_sequencer
-from qubecalib.runtime.box_pool import BoxPool as RuntimeBoxPool
-from qubecalib.runtime.executor import Executor as RuntimeExecutor
+import qxdriver_quel.qubecalib as legacy
+from qxdriver_quel.facade import QubeCalib as FacadeQubeCalib
+from qxdriver_quel.runtime import commands as runtime_commands
+from qxdriver_quel.runtime import sequencer as runtime_sequencer
+from qxdriver_quel.runtime.box_pool import BoxPool as RuntimeBoxPool
+from qxdriver_quel.runtime.executor import Executor as RuntimeExecutor
 
 
 def test_qubecalib_reexports_runtime_classes() -> None:

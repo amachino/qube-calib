@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 def test_qxdriver_quel_top_level_exports_match_qubecalib() -> None:
-    """Given qxdriver_quel package, when importing top-level symbols, then qubecalib compatibility exports are available."""
+    """Given qxdriver_quel package, when importing top-level symbols, then qxdriver_quel compatibility exports are available."""
     from qxdriver_quel import QubeCalib, Sequencer, neopulse
 
     assert QubeCalib.__name__ == "QubeCalib"

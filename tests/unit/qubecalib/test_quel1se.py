@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from qubecalib.instrument.quel.quel1.tool import create_sysdb_items_quel1_riken8
-from qubecalib.sysconfdb import SystemConfigDatabase
+from qxdriver_quel.instrument.quel.quel1.tool import create_sysdb_items_quel1_riken8
+from qxdriver_quel.sysconfdb import SystemConfigDatabase
 
 
 def test_define_port() -> None:

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
-from qubecalib import neopulse
-from qubecalib.neopulse import (
+from qxdriver_quel import neopulse
+from qxdriver_quel.neopulse import (
     Blank,
     CapSampledSequence,
     Capture,

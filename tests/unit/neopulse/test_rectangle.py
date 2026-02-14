@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from qubecalib.neopulse import Rectangle, Waveform
+from qxdriver_quel.neopulse import Rectangle, Waveform
 
 
 def test_inheritance() -> None:

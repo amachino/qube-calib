@@ -1,5 +1,5 @@
 import numpy as np
-from qubecalib.neopulse import Slot, Waveform
+from qxdriver_quel.neopulse import Slot, Waveform
 
 
 def test_inheritance() -> None:

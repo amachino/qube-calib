@@ -6,9 +6,9 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import numpy as np
-from qubecalib.neopulse import GenSampledSequence, GenSampledSubSequence
-from qubecalib.runtime.converter import Converter
-from qubecalib.sysconfdb import BoxSetting, PortSetting
+from qxdriver_quel.neopulse import GenSampledSequence, GenSampledSubSequence
+from qxdriver_quel.runtime.converter import Converter
+from qxdriver_quel.sysconfdb import BoxSetting, PortSetting
 from quel_ic_config import QUEL1_BOXTYPE_ALIAS
 
 

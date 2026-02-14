@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from qubecalib.e7utils import (
+from qxdriver_quel.e7utils import (
     CaptureParamTools,
     WaveSequenceTools,
     _convert_cap_sampled_sequence_to_blanks_and_durations_chain,
     _convert_gen_sampled_sequence_to_blanks_and_waves_chain,
 )
-from qubecalib.neopulse import (
+from qxdriver_quel.neopulse import (
     CapSampledSequence,
     CapSampledSubSequence,
     CaptureSlots,

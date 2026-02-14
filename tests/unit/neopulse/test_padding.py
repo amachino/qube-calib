@@ -1,5 +1,5 @@
 import numpy as np
-from qubecalib.neopulse import Flushleft, Rectangle, Sequence, padding
+from qxdriver_quel.neopulse import Flushleft, Rectangle, Sequence, padding
 
 
 def test_padding() -> None:

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from qubecalib.instrument.quel.quel1.tool.common import (
+from qxdriver_quel.instrument.quel.quel1.tool.common import (
     create_sysdb_items_qube_riken_a,
     create_sysdb_items_quel1_riken8,
     define_port_and_channel,
 )
-from qubecalib.sysconfdb import SystemConfigDatabase
+from qxdriver_quel.sysconfdb import SystemConfigDatabase
 
 
 def test_create_sysdb_items_quel1_riken8_respects_box_name_for_pump() -> None:

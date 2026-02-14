@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from qubecalib.neopulse import Frequency, Magnifier, Rectangle, Sequence, VirtualZ
+from qxdriver_quel.neopulse import Frequency, Magnifier, Rectangle, Sequence, VirtualZ
 
 
 def test_magnifier() -> None:

@@ -2,7 +2,7 @@ import os
 from typing import Generator, MutableSequence
 
 import pytest
-from qubecalib.qubecalib import QubeCalib
+from qxdriver_quel.qubecalib import QubeCalib
 
 CONFIG_KEYS = {
     "clockmaster_setting",
@@ -16,7 +16,7 @@ CONFIG_KEYS = {
 
 
 @pytest.fixture(name="qc")
-def qubecalib() -> Generator[QubeCalib, None, None]:
+def qxdriver_quel() -> Generator[QubeCalib, None, None]:
     """Return a QubeCalib object with a sample config file."""
     cwd = os.getcwd()  # Save the current working directory
     os.chdir(os.path.dirname(__file__))  # Change to the directory of this file

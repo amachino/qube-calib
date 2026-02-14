@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from qubecalib.e7compat import CaptureParam, DspUnit, WaveSequence
+from qxdriver_quel.e7compat import CaptureParam, DspUnit, WaveSequence
 
 PERIOD = 1280 * 128
 

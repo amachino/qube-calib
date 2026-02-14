@@ -1,4 +1,4 @@
-from qubecalib.neopulse import Item, Slot
+from qxdriver_quel.neopulse import Item, Slot
 
 
 def test_inheritance() -> None:

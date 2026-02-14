@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from qubecalib.neopulse import DEFAULT_SAMPLING_PERIOD, Arbit, Waveform
+from qxdriver_quel.neopulse import DEFAULT_SAMPLING_PERIOD, Arbit, Waveform
 
 
 def test_inheritance() -> None:

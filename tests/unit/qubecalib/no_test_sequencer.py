@@ -5,7 +5,7 @@ from typing import Any, Type
 import error
 from e7awgsw import AWG, CaptureUnit, WaveSequence
 from pytest_mock import MockerFixture
-from qubecalib.neopulse import (
+from qxdriver_quel.neopulse import (
     DEFAULT_SAMPLING_PERIOD,
     CapSampledSequence,
     Capture,
@@ -15,7 +15,7 @@ from qubecalib.neopulse import (
     Slot,
     padding,
 )
-from qubecalib.qubecalib import (
+from qxdriver_quel.qubecalib import (
     BoxPool,
     BoxSetting,
     PortSetting,
@@ -152,27 +152,27 @@ class Quel1WaveSubsystemMod:
 
 def test_execute(mocker: MockerFixture) -> None:
     mocker.patch(
-        "qubecalib.qubecalib.BoxPool.get_box",
+        "qxdriver_quel.qubecalib.BoxPool.get_box",
         return_value=(Box(), None),
     )
     # mocker.patch(
-    #     "qubecalib.quel1_wave_subsystem_mod.Quel1WaveSubsystemMod.set_wave",
+    #     "qxdriver_quel.quel1_wave_subsystem_mod.Quel1WaveSubsystemMod.set_wave",
     #     return_value=None,
     # )
     # mocker.patch(
-    #     "qubecalib.general_looptest_common_mod.PulseCap.capture_at_trigger_of",
+    #     "qxdriver_quel.general_looptest_common_mod.PulseCap.capture_at_trigger_of",
     #     return_value=None,
     # )
     # mocker.patch(
-    #     "qubecalib.general_looptest_common_mod.PulseGen.emit_now",
+    #     "qxdriver_quel.general_looptest_common_mod.PulseGen.emit_now",
     #     return_value=None,
     # )
     # mocker.patch(
-    #     "qubecalib.general_looptest_common_mod.PulseCap.wait_until_capture_finishes",
+    #     "qxdriver_quel.general_looptest_common_mod.PulseCap.wait_until_capture_finishes",
     #     return_value=(None, None),
     # )
     mocker.patch(
-        "qubecalib.Sequencer.convert_key_from_bmu_to_target",
+        "qxdriver_quel.Sequencer.convert_key_from_bmu_to_target",
         return_value=(None, None),
     )
 
@@ -225,27 +225,27 @@ def test_execute(mocker: MockerFixture) -> None:
 
 def test_execute_backward_compat(mocker: MockerFixture) -> None:
     mocker.patch(
-        "qubecalib.qubecalib.BoxPool.get_box",
+        "qxdriver_quel.qubecalib.BoxPool.get_box",
         return_value=(Box(), None),
     )
     # mocker.patch(
-    #     "qubecalib.quel1_wave_subsystem_mod.Quel1WaveSubsystemMod.set_wave",
+    #     "qxdriver_quel.quel1_wave_subsystem_mod.Quel1WaveSubsystemMod.set_wave",
     #     return_value=None,
     # )
     # mocker.patch(
-    #     "qubecalib.general_looptest_common_mod.PulseCap.capture_at_trigger_of",
+    #     "qxdriver_quel.general_looptest_common_mod.PulseCap.capture_at_trigger_of",
     #     return_value=None,
     # )
     # mocker.patch(
-    #     "qubecalib.general_looptest_common_mod.PulseGen.emit_now",
+    #     "qxdriver_quel.general_looptest_common_mod.PulseGen.emit_now",
     #     return_value=None,
     # )
     # mocker.patch(
-    #     "qubecalib.general_looptest_common_mod.PulseCap.wait_until_capture_finishes",
+    #     "qxdriver_quel.general_looptest_common_mod.PulseCap.wait_until_capture_finishes",
     #     return_value=(None, None),
     # )
     # mocker.patch(
-    #     "qubecalib.Sequencer.convert_key_from_bmu_to_target",
+    #     "qxdriver_quel.Sequencer.convert_key_from_bmu_to_target",
     #     return_value=(None, None),
     # )
 
@@ -311,27 +311,27 @@ def property_of_slot(slot: Slot) -> tuple[Type[Slot], int, int]:
 
 def test_make_e7_settings(mocker: MockerFixture) -> None:
     mocker.patch(
-        "qubecalib.qubecalib.BoxPool.get_box",
+        "qxdriver_quel.qubecalib.BoxPool.get_box",
         return_value=(Box(), None),
     )
     # mocker.patch(
-    #     "qubecalib.quel1_wave_subsystem_mod.Quel1WaveSubsystemMod.set_wave",
+    #     "qxdriver_quel.quel1_wave_subsystem_mod.Quel1WaveSubsystemMod.set_wave",
     #     return_value=None,
     # )
     # mocker.patch(
-    #     "qubecalib.general_looptest_common_mod.PulseCap.capture_at_trigger_of",
+    #     "qxdriver_quel.general_looptest_common_mod.PulseCap.capture_at_trigger_of",
     #     return_value=None,
     # )
     # mocker.patch(
-    #     "qubecalib.general_looptest_common_mod.PulseGen.emit_now",
+    #     "qxdriver_quel.general_looptest_common_mod.PulseGen.emit_now",
     #     return_value=None,
     # )
     # mocker.patch(
-    #     "qubecalib.general_looptest_common_mod.PulseCap.wait_until_capture_finishes",
+    #     "qxdriver_quel.general_looptest_common_mod.PulseCap.wait_until_capture_finishes",
     #     return_value=(None, None),
     # )
     # mocker.patch(
-    #     "qubecalib.Sequencer.convert_key_from_bmu_to_target",
+    #     "qxdriver_quel.Sequencer.convert_key_from_bmu_to_target",
     #     return_value=(None, None),
     # )
 
