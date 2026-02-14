@@ -435,6 +435,17 @@ def _convert_gen_sampled_sequence_to_blanks_and_waves_chain(
     list[int]
         Alternating blank/wave lengths in samples. The first element is the
         leading blank and the last element is the trailing blank.
+
+    Notes
+    -----
+    Example conversion:
+    - `prev_blank = 2`
+    - Subsequence wave lengths = `[3, 2, 4]`
+    - Subsequence post blanks = `[5, None, 7]`
+    - Top-level `post_blank = 1`
+    - Resulting chain = `[2, 3, 5, 2, 0, 4, 8]`
+      (`None` post blank is normalized to `0`, and the final blank is
+      `7 + 1 = 8`)
     """
     # Start with the leading blank, then append [wave, blank] pairs.
     chain: list[int] = [sequence.prev_blank]
@@ -463,7 +474,7 @@ def _convert_cap_sampled_sequence_to_blanks_and_durations_chain(
     Convert a capture sequence into a `[blank, duration, blank, ...]` chain.
 
     The conversion merges nested blank contributors (slot/subsequence/top-level)
-    into bridge blanks between capture durations.
+    into inter-subsequence blanks between capture durations.
 
     Parameters
     ----------
@@ -475,32 +486,61 @@ def _convert_cap_sampled_sequence_to_blanks_and_durations_chain(
     list[int]
         Alternating blank/duration lengths in samples.
 
+    Notes
+    -----
+    Example conversion:
+    - `sequence.prev_blank = 10`
+    - Subsequence 1:
+      - `prev_blank = 6`
+      - Slot 1: `duration = 8`, `post_blank = 2`
+      - `post_blank = 4`
+    - Subsequence 2:
+      - `prev_blank = 12`
+      - Slot 1: `duration = 10`, `post_blank = 3`
+      - `post_blank = 5`
+    - Top-level `sequence.post_blank = 7`
+    - Inter-subsequence blank = `2 + 4 + 12 = 18`
+    - Last blank = `3 + 5 + 7 = 15`
+    - Resulting chain = `[16, 8, 18, 10, 15]`
+
     Raises
     ------
     ValueError
         Raised when any required blank value is missing.
     """
     seq = sequence
-    # Bridge blank = last slot post + previous subsequence post + next subsequence prev.
-    blank_bridges = [
+    subseqs = seq.sub_sequences
+    non_final_subseqs = subseqs[:-1]
+    following_subseqs = subseqs[1:]
+    final_subseq = subseqs[-1]
+    # Inter-subsequence blank = last slot post + previous subsequence post + next subsequence prev.
+    # Example: 8 + 4 + 6 = 18
+    #   prev_subseq.capture_slots[-1].post_blank = 8
+    #   prev_subseq.post_blank = 4
+    #   next_subseq.prev_blank = 6
+    inter_subseq_blanks = [
         _require_int(
-            lo.capture_slots[-1].post_blank + lo.post_blank + hi.prev_blank
-            if lo.capture_slots[-1].post_blank is not None
-            and lo.post_blank is not None
-            and hi.prev_blank is not None
+            prev_subseq.capture_slots[-1].post_blank
+            + prev_subseq.post_blank
+            + next_subseq.prev_blank
+            if prev_subseq.capture_slots[-1].post_blank is not None
+            and prev_subseq.post_blank is not None
+            and next_subseq.prev_blank is not None
             else None,
-            context="blank bridge",
+            context="inter-subsequence blank",
         )
-        for lo, hi in zip(seq.sub_sequences[:-1], seq.sub_sequences[1:], strict=True)
+        for prev_subseq, next_subseq in zip(
+            non_final_subseqs, following_subseqs, strict=True
+        )
     ]
     last_blank = (
         # Tail blank = last slot post + last subsequence post + top-level post.
         _require_int(
-            seq.sub_sequences[-1].capture_slots[-1].post_blank
-            + seq.sub_sequences[-1].post_blank
+            final_subseq.capture_slots[-1].post_blank
+            + final_subseq.post_blank
             + seq.post_blank
-            if seq.sub_sequences[-1].capture_slots[-1].post_blank is not None
-            and seq.sub_sequences[-1].post_blank is not None
+            if final_subseq.capture_slots[-1].post_blank is not None
+            and final_subseq.post_blank is not None
             else None,
             context="last blank",
         )
@@ -511,18 +551,23 @@ def _convert_cap_sampled_sequence_to_blanks_and_durations_chain(
         else 0
     )
     # Leading blank combines sequence.prev_blank and the first subsequence prev_blank.
-    chain: list[int] = [seq.prev_blank + seq.sub_sequences[0].prev_blank]
-    for subseq, bridge_blank in zip(seq.sub_sequences[:-1], blank_bridges, strict=True):
-        # For non-final subsequences, close with the corresponding bridge blank.
+    # Example: sequence.prev_blank=10 and first subseq.prev_blank=6 -> 16.
+    chain: list[int] = [seq.prev_blank + subseqs[0].prev_blank]
+    for prev_subseq, inter_subseq_blank in zip(
+        non_final_subseqs, inter_subseq_blanks, strict=True
+    ):
+        # For non-final subsequences, close with the corresponding inter-subsequence blank.
         _append_capture_slots(
             chain=chain,
-            capture_slots=subseq.capture_slots,
-            last_blank=bridge_blank,
+            capture_slots=prev_subseq.capture_slots,
+            last_blank=inter_subseq_blank,
         )
     # Final subsequence is closed with the computed last_blank.
+    # Example tail blank: 12 + 5 + 7 = 24
+    #   final slot post_blank=12, final subseq post_blank=5, sequence.post_blank=7.
     _append_capture_slots(
         chain=chain,
-        capture_slots=seq.sub_sequences[-1].capture_slots,
+        capture_slots=final_subseq.capture_slots,
         last_blank=last_blank,
     )
     return chain
@@ -551,26 +596,32 @@ def _convert_cap_sampled_sequence_to_blanks_and_durations_chain_use_original_val
         Raised when required original blank fields are missing.
     """
     seq = sequence
+    subseqs = seq.sub_sequences
+    non_final_subseqs = subseqs[:-1]
+    following_subseqs = subseqs[1:]
+    final_subseq = subseqs[-1]
     # Use pre-rounding original_* values, with the same flow as the normal path.
-    blank_bridges = [
+    inter_subseq_blanks = [
         _require_int(
-            lo.capture_slots[-1].original_post_blank
-            + lo.original_post_blank
-            + hi.original_prev_blank
-            if lo.capture_slots[-1].original_post_blank is not None
-            and lo.original_post_blank is not None
-            and hi.original_prev_blank is not None
+            prev_subseq.capture_slots[-1].original_post_blank
+            + prev_subseq.original_post_blank
+            + next_subseq.original_prev_blank
+            if prev_subseq.capture_slots[-1].original_post_blank is not None
+            and prev_subseq.original_post_blank is not None
+            and next_subseq.original_prev_blank is not None
             else None,
-            context="original blank bridge",
+            context="original inter-subsequence blank",
         )
-        for lo, hi in zip(seq.sub_sequences[:-1], seq.sub_sequences[1:], strict=True)
+        for prev_subseq, next_subseq in zip(
+            non_final_subseqs, following_subseqs, strict=True
+        )
     ]
     last_blank = _require_int(
-        seq.sub_sequences[-1].capture_slots[-1].original_post_blank
-        + seq.sub_sequences[-1].original_post_blank
+        final_subseq.capture_slots[-1].original_post_blank
+        + final_subseq.original_post_blank
         + seq.original_post_blank
-        if seq.sub_sequences[-1].capture_slots[-1].original_post_blank is not None
-        and seq.sub_sequences[-1].original_post_blank is not None
+        if final_subseq.capture_slots[-1].original_post_blank is not None
+        and final_subseq.original_post_blank is not None
         and seq.original_post_blank is not None
         else None,
         context="original last blank",
@@ -579,21 +630,23 @@ def _convert_cap_sampled_sequence_to_blanks_and_durations_chain_use_original_val
     prev_blank = seq.original_prev_blank
     if prev_blank is None:
         raise ValueError("original_prev_blank must be set")
-    subseq_prev_blank = seq.sub_sequences[0].original_prev_blank
+    subseq_prev_blank = subseqs[0].original_prev_blank
     if subseq_prev_blank is None:
         raise ValueError("original_prev_blank of subseq must be set")
 
     # After the leading blank, expand each subsequence into [duration, blank] entries.
     chain: list[int] = [int(prev_blank + subseq_prev_blank)]
-    for subseq, bridge_blank in zip(seq.sub_sequences[:-1], blank_bridges, strict=True):
+    for prev_subseq, inter_subseq_blank in zip(
+        non_final_subseqs, inter_subseq_blanks, strict=True
+    ):
         _append_capture_slots_using_original_values(
             chain=chain,
-            capture_slots=subseq.capture_slots,
-            last_blank=bridge_blank,
+            capture_slots=prev_subseq.capture_slots,
+            last_blank=inter_subseq_blank,
         )
     _append_capture_slots_using_original_values(
         chain=chain,
-        capture_slots=seq.sub_sequences[-1].capture_slots,
+        capture_slots=final_subseq.capture_slots,
         last_blank=last_blank,
     )
     return chain
@@ -625,7 +678,7 @@ def _append_capture_slots(
         chain.extend(
             [slot.duration, _require_int(slot.post_blank, context="slot blank")]
         )
-    # For the final slot, use the caller-provided blank (bridge or tail).
+    # For the final slot, use the caller-provided blank (inter-subsequence or tail).
     chain.extend([capture_slots[-1].duration, last_blank])
 
 

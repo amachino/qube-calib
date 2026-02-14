@@ -110,6 +110,39 @@ def test_convert_gen_chain_handles_none_blanks() -> None:
     assert chain == [4, 3, 0, 2, 12]
 
 
+def test_convert_gen_chain_matches_documented_example() -> None:
+    """Given the documented gen-chain example, when converting, then the expected chain is produced."""
+    sequence = GenSampledSequence(
+        target_name="RQ00",
+        prev_blank=2,
+        post_blank=1,
+        sub_sequences=[
+            GenSampledSubSequence(
+                real=np.array([0.1, 0.2, 0.3]),
+                imag=np.array([0.0, 0.0, 0.0]),
+                repeats=1,
+                post_blank=5,
+            ),
+            GenSampledSubSequence(
+                real=np.array([0.4, 0.5]),
+                imag=np.array([0.0, 0.0]),
+                repeats=1,
+                post_blank=None,
+            ),
+            GenSampledSubSequence(
+                real=np.array([0.6, 0.7, 0.8, 0.9]),
+                imag=np.array([0.0, 0.0, 0.0, 0.0]),
+                repeats=1,
+                post_blank=7,
+            ),
+        ],
+    )
+
+    chain = _convert_gen_sampled_sequence_to_blanks_and_waves_chain(sequence)
+
+    assert chain == [2, 3, 5, 2, 0, 4, 8]
+
+
 def test_convert_cap_chain_merges_blank_bridge_and_last_blank() -> None:
     """Given nested capture blanks, when converting cap chain, then bridge and tail are merged."""
     sequence = CapSampledSequence(
@@ -154,6 +187,52 @@ def test_convert_cap_chain_merges_blank_bridge_and_last_blank() -> None:
     chain = _convert_cap_sampled_sequence_to_blanks_and_durations_chain(sequence)
 
     assert chain == [10, 8, 10, 10, 31]
+
+
+def test_convert_cap_chain_matches_documented_example() -> None:
+    """Given the documented cap-chain example, when converting, then the expected chain is produced."""
+    sequence = CapSampledSequence(
+        target_name="RQ00",
+        prev_blank=10,
+        post_blank=7,
+        repeats=1,
+        sub_sequences=[
+            CapSampledSubSequence(
+                capture_slots=[
+                    CaptureSlots(
+                        duration=8,
+                        post_blank=2,
+                        original_duration=8.0,
+                        original_post_blank=2.0,
+                    )
+                ],
+                prev_blank=6,
+                post_blank=4,
+                original_prev_blank=6.0,
+                original_post_blank=4.0,
+                repeats=1,
+            ),
+            CapSampledSubSequence(
+                capture_slots=[
+                    CaptureSlots(
+                        duration=10,
+                        post_blank=3,
+                        original_duration=10.0,
+                        original_post_blank=3.0,
+                    )
+                ],
+                prev_blank=12,
+                post_blank=5,
+                original_prev_blank=12.0,
+                original_post_blank=5.0,
+                repeats=1,
+            ),
+        ],
+    )
+
+    chain = _convert_cap_sampled_sequence_to_blanks_and_durations_chain(sequence)
+
+    assert chain == [16, 8, 18, 10, 15]
 
 
 def test_wave_create_rejects_out_of_range_iq() -> None:
