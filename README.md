@@ -56,9 +56,13 @@ uv run pytest -q
 
 ## Project Layout
 
-- `src/qubecalib/qubecalib.py`: compatibility facade and high-level orchestration APIs
+- `src/qubecalib/qubecalib.py`: backward-compatible public export module
+- `src/qubecalib/facade.py`: high-level orchestration API implementation (`QubeCalib`)
 - `src/qubecalib/runtime/`: execution runtime internals (`Executor`, `BoxPool`)
-- `src/qubecalib/runtime/sequencer.py`: sequence compilation/execution primitives
+- `src/qubecalib/runtime/sequencer.py`: compatibility re-exports for sequencer runtime
+- `src/qubecalib/runtime/converter.py`: sampled-sequence to device-setting conversion
+- `src/qubecalib/runtime/sequencer_core.py`: sequencer execution workflow
+- `src/qubecalib/runtime/commands.py`: command primitives (`Command`, `RfSwitch`, config accessors)
 - `src/qubecalib/instrument/quel/quel1/`: quelware 0.10 driver compatibility layer
 - `src/qubecalib/resource_map.py`: target-to-resource mapping logic
 - `tests/unit/`: unit tests
