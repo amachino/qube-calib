@@ -56,8 +56,11 @@ uv run pytest -q
 
 ## Project Layout
 
-- `src/qubecalib/`: library sources
-- `tests/`: unit tests
+- `src/qubecalib/qubecalib.py`: compatibility facade and high-level orchestration APIs
+- `src/qubecalib/runtime/`: execution runtime internals (`Executor`, `BoxPool`)
+- `src/qubecalib/instrument/quel/quel1/`: quelware 0.10 driver compatibility layer
+- `src/qubecalib/resource_map.py`: target-to-resource mapping logic
+- `tests/unit/`: unit tests
 - `docs/`: usage notebooks and sample configs
 
 ## Related Projects
