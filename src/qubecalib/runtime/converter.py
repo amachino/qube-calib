@@ -7,6 +7,7 @@ import math
 import warnings
 from collections import Counter
 from collections.abc import MutableMapping
+from copy import deepcopy
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -50,6 +51,7 @@ class Sideband(Enum):
 
 
 DEFAULT_SIDEBAND = "U"
+SAMPLING_PERIOD_NS = 2.0
 
 
 class Converter:
@@ -115,18 +117,20 @@ class Converter:
         dict[tuple[str, Quel1PortType, int], WaveSequence | CaptureParam]
             Device-specific setting map for both AWG and capture units.
         """
+        cap_targets = set(cap_sampled_sequence)
+        gen_targets = set(gen_sampled_sequence)
         capseq = cls.convert_to_cap_device_specific_sequence(
             gen_sampled_sequence=gen_sampled_sequence,
             cap_sampled_sequence=cap_sampled_sequence,
             resource_map={
-                target_name: _
-                for target_name, _ in resource_map.items()
-                if target_name in cap_sampled_sequence
+                target_name: mapping
+                for target_name, mapping in resource_map.items()
+                if target_name in cap_targets
             },
             port_config={
-                target_name: _
-                for target_name, _ in port_config.items()
-                if target_name in cap_sampled_sequence
+                target_name: config
+                for target_name, config in port_config.items()
+                if target_name in cap_targets
             },
             repeats=repeats,
             interval=interval,
@@ -142,14 +146,14 @@ class Converter:
             gen_sampled_sequence=gen_sampled_sequence,
             cap_sampled_sequence=cap_sampled_sequence,
             resource_map={
-                target_name: _
-                for target_name, _ in resource_map.items()
-                if target_name in gen_sampled_sequence
+                target_name: mapping
+                for target_name, mapping in resource_map.items()
+                if target_name in gen_targets
             },
             port_config={
-                target_name: _
-                for target_name, _ in port_config.items()
-                if target_name in gen_sampled_sequence
+                target_name: config
+                for target_name, config in port_config.items()
+                if target_name in gen_targets
             },
             repeats=repeats,
             interval=interval,
@@ -350,10 +354,14 @@ class Converter:
         ValueError
             Raised when readout timing/offset metadata is partially missing.
         """
-        SAMPLING_PERIOD = 2
+        # Work on a detached copy to keep caller-owned sampled sequences immutable.
+        working_gen_sequences = {
+            target_name: cls._clone_gen_sampled_sequence(sequence)
+            for target_name, sequence in gen_sampled_sequence.items()
+        }
 
-        targets_freqs: MutableMapping[str, float] = {}
-        targets_ids: MutableMapping[str, tuple[str, Quel1PortType, int]] = {}
+        targets_freqs: dict[str, float] = {}
+        targets_ids: dict[str, tuple[str, Quel1PortType, int]] = {}
         for target_name, rmap in resource_map.items():
             rmap_target = rmap["target"]
             if not isinstance(rmap_target, dict):
@@ -362,15 +370,6 @@ class Converter:
                 f_target=rmap_target["frequency"],
                 port_config=port_config[target_name],
             )
-
-            # targets_freqs = {
-            #     target_name: cls.calc_modulation_frequency(
-            #         f_target=rmap["target"]["frequency"],
-            #         port_config=port_config[target_name],
-            #     )
-            #     for target_name, rmap in resource_map.items()
-            # }
-
             rmap_box = rmap["box"]
             if not isinstance(rmap_box, BoxSetting):
                 raise TypeError("box is not defined")
@@ -387,13 +386,13 @@ class Converter:
             )
 
         for target_name, freq in targets_freqs.items():
-            gen_sampled_sequence[target_name].modulation_frequency = freq
-        for target, seq in gen_sampled_sequence.items():
-            if target not in cap_sampled_sequence:
+            working_gen_sequences[target_name].modulation_frequency = freq
+        for target_name, gen_sequence in working_gen_sequences.items():
+            if target_name not in cap_sampled_sequence:
                 continue
-            modulation_angular_frequency = 2 * np.pi * targets_freqs[target]
-            timing_list = seq.readout_timings
-            offset_list = cap_sampled_sequence[target].readin_offsets
+            modulation_angular_frequency = 2 * np.pi * targets_freqs[target_name]
+            timing_list = gen_sequence.readout_timings
+            offset_list = cap_sampled_sequence[target_name].readin_offsets
             if timing_list is None and offset_list is None:
                 continue
             if timing_list is None:
@@ -401,7 +400,7 @@ class Converter:
             if offset_list is None:
                 raise ValueError("readin_offsets is not defined")
             for subseq, timings, offsets in zip(
-                seq.sub_sequences, timing_list, offset_list, strict=False
+                gen_sequence.sub_sequences, timing_list, offset_list, strict=False
             ):
                 # NOTE: `strict=False` tolerates length mismatches by truncation.
                 # A mismatch can silently leave trailing subsequences uncorrected.
@@ -409,79 +408,104 @@ class Converter:
                 for (begin, end), (offsetb, _) in zip(timings, offsets, strict=False):
                     # NOTE: Same truncation caveat as above for timing/offset pairs.
                     offset_phase = modulation_angular_frequency * offsetb
-                    b = math.floor(begin / SAMPLING_PERIOD)
-                    e = math.floor(end / SAMPLING_PERIOD)
-                    # NOTE: In-place mutation persists in the input sequence object
-                    # and can accumulate across repeated conversions.
+                    b = math.floor(begin / SAMPLING_PERIOD_NS)
+                    e = math.floor(end / SAMPLING_PERIOD_NS)
                     wave[b:e] = wave[b:e] * np.exp(-1j * offset_phase)
                 subseq.real = np.real(wave)
                 subseq.imag = np.imag(wave)
 
         ndelay_or_nwait_by_id = {
-            id: next(
-                iter(
-                    {
-                        rmap["port"].ndelay_or_nwait[rmap["channel_number"]]
-                        for rmap in resource_map.values()
-                        if isinstance(rmap["box"], BoxSetting)
-                        and isinstance(rmap["port"], PortSetting)
-                        and isinstance(rmap["channel_number"], int)
-                        if rmap["box"].box_name == id[0]
-                        and rmap["port"].port == id[1]
-                        and rmap["channel_number"] == id[2]
-                    }
-                )
+            (
+                rmap_box.box_name,
+                rmap_port.port,
+                rmap_channel_number,
+            ): (
+                rmap_port.ndelay_or_nwait[rmap_channel_number]
+                if rmap_port.ndelay_or_nwait is not None
+                else 0
             )
-            for id in targets_ids.values()
+            for rmap in resource_map.values()
+            if isinstance(rmap["box"], BoxSetting)
+            and isinstance(rmap["port"], PortSetting)
+            and isinstance(rmap["channel_number"], int)
+            for rmap_box, rmap_port, rmap_channel_number in [
+                (
+                    rmap["box"],
+                    rmap["port"],
+                    rmap["channel_number"],
+                )
+            ]
         }
         ids_sampled_sequences: dict[
             tuple[str, Quel1PortType, int], dict[str, GenSampledSequence]
         ] = {}
-        for target, box_port_channel in targets_ids.items():
-            if target in gen_sampled_sequence:
-                if box_port_channel not in ids_sampled_sequences:
-                    ids_sampled_sequences[box_port_channel] = {}
-                ids_sampled_sequences[box_port_channel][target] = gen_sampled_sequence[
-                    target
-                ]
-        # ids_sampled_sequences = {
-        #     id: {
-        #         _: sampled_sequence[_]
-        #         for _, _id in targets_ids.items()
-        #         if _id == id and _ in sampled_sequence
-        #     }
-        #     for id in targets_ids.values()
-        # }
+        for target_name, hardware_id in targets_ids.items():
+            if target_name not in working_gen_sequences:
+                continue
+            if hardware_id not in ids_sampled_sequences:
+                ids_sampled_sequences[hardware_id] = {}
+            ids_sampled_sequences[hardware_id][target_name] = working_gen_sequences[
+                target_name
+            ]
         ids_modfreqs = {
-            id: {_: targets_freqs[_] for _, _id in targets_ids.items() if _id == id}
-            for id in targets_ids.values()
+            hardware_id: {
+                target_name: targets_freqs[target_name]
+                for target_name, target_hardware_id in targets_ids.items()
+                if target_hardware_id == hardware_id
+            }
+            for hardware_id in targets_ids.values()
         }
-        for seq in gen_sampled_sequence.values():
-            padding = seq.padding
-            subseq = seq.sub_sequences[0]
-            # NOTE: In-place mutation permanently prepends zeros to the first
-            # subsequence. Re-running conversion stacks padding.
-            subseq.real = np.concatenate([np.zeros(padding), subseq.real])
-            subseq.imag = np.concatenate([np.zeros(padding), subseq.imag])
+        for sequence in working_gen_sequences.values():
+            if sequence.padding == 0:
+                continue
+            first_subseq = sequence.sub_sequences[0]
+            zeros = np.zeros(sequence.padding)
+            first_subseq.real = np.concatenate([zeros, first_subseq.real])
+            first_subseq.imag = np.concatenate([zeros, first_subseq.imag])
         ids_muxed_sequences = {
-            id: cls.multiplex(
-                sequences=ids_sampled_sequences[id],
-                modfreqs=ids_modfreqs[id],
+            hardware_id: cls.multiplex(
+                sequences=ids_sampled_sequences[hardware_id],
+                modfreqs=ids_modfreqs[hardware_id],
             )
-            for id in ids_sampled_sequences
+            for hardware_id in ids_sampled_sequences
         }
         return {
-            id: WaveSequenceTools.create(
-                sequence=ids_muxed_sequences[id],
-                # wait_words=wait_words,
-                wait_words=ndelay_or_nwait_by_id[id],
+            hardware_id: WaveSequenceTools.create(
+                sequence=ids_muxed_sequences[hardware_id],
+                wait_words=ndelay_or_nwait_by_id[hardware_id],
                 repeats=repeats,
                 interval_samples=int(
-                    interval / ids_muxed_sequences[id].sampling_period
+                    interval / ids_muxed_sequences[hardware_id].sampling_period
                 ),
             )
-            for id in ids_sampled_sequences
+            for hardware_id in ids_sampled_sequences
         }
+
+    @staticmethod
+    def _clone_gen_sampled_sequence(sequence: GenSampledSequence) -> GenSampledSequence:
+        """Return a detached copy of one generator sampled sequence."""
+        return GenSampledSequence(
+            target_name=sequence.target_name,
+            prev_blank=sequence.prev_blank,
+            sampling_period=sequence.sampling_period,
+            post_blank=sequence.post_blank,
+            repeats=sequence.repeats,
+            original_prev_blank=sequence.original_prev_blank,
+            original_post_blank=sequence.original_post_blank,
+            padding=sequence.padding,
+            modulation_frequency=sequence.modulation_frequency,
+            sub_sequences=[
+                GenSampledSubSequence(
+                    real=np.array(subseq.real, copy=True),
+                    imag=np.array(subseq.imag, copy=True),
+                    repeats=subseq.repeats,
+                    post_blank=subseq.post_blank,
+                    original_post_blank=subseq.original_post_blank,
+                )
+                for subseq in sequence.sub_sequences
+            ],
+            readout_timings=deepcopy(sequence.readout_timings),
+        )
 
     @classmethod
     def calc_modulation_frequency_for_direct_conversion_transceiver(
