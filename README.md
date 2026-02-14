@@ -72,3 +72,7 @@ uv run pytest -q
 
 - `qube-server`: moved from historical `QubeServer.py` scope
   ([qiqb-osaka/qube-server](https://github.com/qiqb-osaka/qube-server))
+
+## Architecture Notes
+
+- Runtime module responsibilities are documented in `docs/architecture.md`.
