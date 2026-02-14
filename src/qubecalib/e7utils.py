@@ -573,85 +573,6 @@ def _convert_cap_sampled_sequence_to_blanks_and_durations_chain(
     return chain
 
 
-def _convert_cap_sampled_sequence_to_blanks_and_durations_chain_use_original_values(
-    sequence: CapSampledSequence,
-) -> list[int]:
-    """
-    Convert capture timing to a chain using original (pre-rounding) values.
-
-    Parameters
-    ----------
-    sequence : CapSampledSequence
-        Source capture sampled sequence.
-
-    Returns
-    -------
-    list[int]
-        Alternating blank/duration lengths computed from original values and
-        cast to integers.
-
-    Raises
-    ------
-    ValueError
-        Raised when required original blank fields are missing.
-    """
-    seq = sequence
-    subseqs = seq.sub_sequences
-    non_final_subseqs = subseqs[:-1]
-    following_subseqs = subseqs[1:]
-    final_subseq = subseqs[-1]
-    # Use pre-rounding original_* values, with the same flow as the normal path.
-    inter_subseq_blanks = [
-        _require_int(
-            prev_subseq.capture_slots[-1].original_post_blank
-            + prev_subseq.original_post_blank
-            + next_subseq.original_prev_blank
-            if prev_subseq.capture_slots[-1].original_post_blank is not None
-            and prev_subseq.original_post_blank is not None
-            and next_subseq.original_prev_blank is not None
-            else None,
-            context="original inter-subsequence blank",
-        )
-        for prev_subseq, next_subseq in zip(
-            non_final_subseqs, following_subseqs, strict=True
-        )
-    ]
-    last_blank = _require_int(
-        final_subseq.capture_slots[-1].original_post_blank
-        + final_subseq.original_post_blank
-        + seq.original_post_blank
-        if final_subseq.capture_slots[-1].original_post_blank is not None
-        and final_subseq.original_post_blank is not None
-        and seq.original_post_blank is not None
-        else None,
-        context="original last blank",
-    )
-
-    prev_blank = seq.original_prev_blank
-    if prev_blank is None:
-        raise ValueError("original_prev_blank must be set")
-    subseq_prev_blank = subseqs[0].original_prev_blank
-    if subseq_prev_blank is None:
-        raise ValueError("original_prev_blank of subseq must be set")
-
-    # After the leading blank, expand each subsequence into [duration, blank] entries.
-    chain: list[int] = [int(prev_blank + subseq_prev_blank)]
-    for prev_subseq, inter_subseq_blank in zip(
-        non_final_subseqs, inter_subseq_blanks, strict=True
-    ):
-        _append_capture_slots_using_original_values(
-            chain=chain,
-            capture_slots=prev_subseq.capture_slots,
-            last_blank=inter_subseq_blank,
-        )
-    _append_capture_slots_using_original_values(
-        chain=chain,
-        capture_slots=final_subseq.capture_slots,
-        last_blank=last_blank,
-    )
-    return chain
-
-
 def _require_int(value: int | float | None, *, context: str) -> int:
     """Return integer value or raise when missing."""
     # In this module, None means a required value is missing, so fail fast.
@@ -680,21 +601,3 @@ def _append_capture_slots(
         )
     # For the final slot, use the caller-provided blank (inter-subsequence or tail).
     chain.extend([capture_slots[-1].duration, last_blank])
-
-
-def _append_capture_slots_using_original_values(
-    *,
-    chain: list[int],
-    capture_slots: MutableSequence[CaptureSlots],
-    last_blank: int,
-) -> None:
-    """Append one capture-subsequence slots into an alternating chain."""
-    # Same chain shape as above, but values come from original_* fields.
-    for slot in capture_slots[:-1]:
-        chain.extend(
-            [
-                int(slot.original_duration),
-                _require_int(slot.original_post_blank, context="original slot blank"),
-            ]
-        )
-    chain.extend([int(capture_slots[-1].original_duration), last_blank])
