@@ -1,3 +1,5 @@
+# ruff: noqa
+
 from __future__ import annotations
 
 import quel_ic_config

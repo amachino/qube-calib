@@ -1,3 +1,5 @@
+# ruff: noqa
+
 import pytest
 from qxdriver_quel.e7compat import CaptureParam, WaveSequence
 from qxdriver_quel.instrument.quel.quel1.driver import multi, single

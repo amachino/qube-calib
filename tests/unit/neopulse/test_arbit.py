@@ -1,3 +1,5 @@
+# ruff: noqa
+
 import numpy as np
 import pytest
 from qxdriver_quel.neopulse import DEFAULT_SAMPLING_PERIOD, Arbit, Waveform

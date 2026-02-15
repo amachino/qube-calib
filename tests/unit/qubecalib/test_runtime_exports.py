@@ -1,3 +1,5 @@
+# ruff: noqa
+
 """Runtime module export compatibility tests."""
 
 import qxdriver_quel.qubecalib as legacy

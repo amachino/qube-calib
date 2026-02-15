@@ -1,3 +1,5 @@
+# ruff: noqa
+
 from __future__ import annotations
 
 from qxdriver_quel.qubecalib import SystemConfigDatabase

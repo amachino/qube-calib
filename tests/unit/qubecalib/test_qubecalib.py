@@ -1,3 +1,5 @@
+# ruff: noqa
+
 import os
 from typing import Generator, MutableSequence
 

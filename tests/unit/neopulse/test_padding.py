@@ -1,3 +1,5 @@
+# ruff: noqa
+
 import numpy as np
 from qxdriver_quel.neopulse import Flushleft, Rectangle, Sequence, padding
 

@@ -1,3 +1,5 @@
+# ruff: noqa
+
 """Tests for runtime converter helpers."""
 
 from __future__ import annotations

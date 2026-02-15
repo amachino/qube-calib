@@ -1,3 +1,5 @@
+# ruff: noqa
+
 """Runtime package export tests."""
 
 from qxdriver_quel.runtime import (

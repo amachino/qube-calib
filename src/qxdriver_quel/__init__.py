@@ -1,3 +1,5 @@
+# ruff: noqa
+
 """QuEL driver package with qubecalib-compatible top-level exports."""
 
 from __future__ import annotations

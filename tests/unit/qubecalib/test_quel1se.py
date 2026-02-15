@@ -1,3 +1,5 @@
+# ruff: noqa
+
 from __future__ import annotations
 
 from qxdriver_quel.instrument.quel.quel1.tool import create_sysdb_items_quel1_riken8

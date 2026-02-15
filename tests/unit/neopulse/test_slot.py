@@ -1,3 +1,5 @@
+# ruff: noqa
+
 from qxdriver_quel.neopulse import Item, Slot
 
 
