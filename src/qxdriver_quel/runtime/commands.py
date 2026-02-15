@@ -11,8 +11,6 @@ from qxdriver_quel.runtime.box_pool import BoxPool
 from qxdriver_quel.runtime.converter import DEFAULT_SIDEBAND
 from qxdriver_quel.sysconfdb import Quel1PortType
 
-Quel1BoxWithRawWss = Quel1Box
-
 
 class Command:
     """Define the interface for executable command objects."""
@@ -28,7 +26,7 @@ class Command:
 class TargetBPC(TypedDict):
     """Describe target mapping with box, port, and channel metadata."""
 
-    box: Quel1BoxWithRawWss
+    box: Quel1Box
     port: int | tuple[int, int]
     channel: int
     box_name: str
@@ -41,7 +39,7 @@ class PortConfigAcquirer:
         self,
         boxpool: BoxPool,
         box_name: str,
-        box: Quel1BoxWithRawWss,
+        box: Quel1Box,
         port: Quel1PortType,
         channel: int,
         *,

@@ -30,8 +30,6 @@ from .sysconfdb import SystemConfigDatabase
 
 logger = logging.getLogger(__name__)
 
-Quel1BoxWithRawWss = Quel1Box
-
 Direction = _sequencer_runtime.Direction
 Sideband = _sequencer_runtime.Sideband
 DEFAULT_SIDEBAND = _sequencer_runtime.DEFAULT_SIDEBAND
@@ -343,7 +341,7 @@ class QubeCalib:
         self,
         box_name: str,
         reconnect: bool = True,
-    ) -> Quel1BoxWithRawWss:
+    ) -> Quel1Box:
         """Create and optionally reconnect a box by name."""
         return self.system_config_database.create_box(
             box_name=box_name,

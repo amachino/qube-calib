@@ -5,7 +5,6 @@ from __future__ import annotations
 from quel_ic_config import Quel1Box, Quel1ConfigOption
 
 from qxdriver_quel.clockmaster_compat import QuBEMasterClient, SequencerClient
-from qxdriver_quel.compat.quel1_box import Quel1BoxCompatAdapter, adapt_quel1_box
 from qxdriver_quel.instrument.quel.quel1 import Quel1System
 from qxdriver_quel.instrument.quel.quel1.driver import (
     Action,
@@ -57,7 +56,6 @@ __all__ = [
     "QuBEMasterClient",
     "QubeCalib",
     "Quel1Box",
-    "Quel1BoxCompatAdapter",
     "Quel1ConfigOption",
     "Quel1System",
     "RunitId",
@@ -68,5 +66,4 @@ __all__ = [
     "Skew",
     "TriggerSetting",
     "WaveSequenceTools",
-    "adapt_quel1_box",
 ]

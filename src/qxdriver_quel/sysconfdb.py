@@ -29,8 +29,6 @@ DEFAULT_SIDEBAND = "U"
 
 logger = logging.getLogger(__name__)
 
-Quel1BoxWithRawWss = Quel1Box
-
 
 class SystemConfigDatabase:
     """Store and resolve box/port/target relationships for calibration flows."""
@@ -464,10 +462,10 @@ class SystemConfigDatabase:
         self,
         box_name: str,
         reconnect: bool = True,
-    ) -> Quel1BoxWithRawWss:
+    ) -> Quel1Box:
         """Create and optionally reconnect a `Quel1Box` instance."""
         s = self._box_settings[box_name]
-        box = Quel1BoxWithRawWss.create(
+        box = Quel1Box.create(
             ipaddr_wss=str(s.ipaddr_wss),
             ipaddr_sss=str(s.ipaddr_sss),
             ipaddr_css=str(s.ipaddr_css),

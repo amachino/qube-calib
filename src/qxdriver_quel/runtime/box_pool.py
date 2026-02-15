@@ -16,8 +16,6 @@ from qxdriver_quel.sysconfdb import Quel1PortType
 
 logger = logging.getLogger(__name__)
 
-Quel1BoxWithRawWss = Quel1Box
-
 
 class BoxPool:
     """
@@ -35,7 +33,7 @@ class BoxPool:
 
     def __init__(self) -> None:
         self._clock_master: QuBEMasterClient | None = None
-        self._boxes: dict[str, tuple[Quel1BoxWithRawWss, SequencerClient]] = {}
+        self._boxes: dict[str, tuple[Quel1Box, SequencerClient]] = {}
         self._linkstatus: dict[str, bool] = {}
         self._estimated_timediff: dict[str, int] = {}
         self._cap_sysref_time_offset: int = 0
@@ -48,7 +46,7 @@ class BoxPool:
         return self._clock_master
 
     @property
-    def boxes(self) -> dict[str, tuple[Quel1BoxWithRawWss, SequencerClient]]:
+    def boxes(self) -> dict[str, tuple[Quel1Box, SequencerClient]]:
         """Return registered boxes and their sequencer clients."""
         return self._boxes
 
@@ -61,7 +59,7 @@ class BoxPool:
         self,
         *,
         box_name: str,
-        box: Quel1BoxWithRawWss,
+        box: Quel1Box,
         sequencer: SequencerClient,
     ) -> None:
         """Register an externally created box and sequencer pair."""
@@ -72,7 +70,7 @@ class BoxPool:
         self,
         *,
         box_name: str,
-        box: Quel1BoxWithRawWss,
+        box: Quel1Box,
     ) -> dict[str, Any]:
         """Return cached dump data for a box, creating it on first use."""
         if box_name not in self._box_config_cache:
@@ -134,9 +132,9 @@ class BoxPool:
         ipaddr_sss: str,
         ipaddr_css: str,
         boxtype: Quel1BoxType,
-    ) -> Quel1BoxWithRawWss:
+    ) -> Quel1Box:
         """Create and register a new box and its sequencer client."""
-        box = Quel1BoxWithRawWss.create(
+        box = Quel1Box.create(
             ipaddr_wss=ipaddr_wss,
             ipaddr_sss=ipaddr_sss,
             ipaddr_css=ipaddr_css,
@@ -208,7 +206,7 @@ class BoxPool:
     def get_box(
         self,
         name: str,
-    ) -> tuple[Quel1BoxWithRawWss, SequencerClient]:
+    ) -> tuple[Quel1Box, SequencerClient]:
         """Return the registered `(box, sequencer_client)` pair by name."""
         if name in self._boxes:
             box, sqc = self._boxes[name]
