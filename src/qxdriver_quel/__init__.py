@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 __version__ = "3.1.16beta3"
 
 if TYPE_CHECKING:
-    import qxdriver_quel.neopulse as neopulse
+    import qxdriver_quel.pulse as pulse
 
     from qxdriver_quel.qubecalib import QubeCalib, Sequencer
 
@@ -18,7 +18,7 @@ __all__ = [
     "QubeCalib",
     "Sequencer",
     "__version__",
-    "neopulse",
+    "pulse",
 ]
 
 
@@ -27,6 +27,6 @@ def __getattr__(name: str):
         from qxdriver_quel.qubecalib import QubeCalib, Sequencer
 
         return {"QubeCalib": QubeCalib, "Sequencer": Sequencer}[name]
-    if name == "neopulse":
-        return importlib.import_module("qxdriver_quel.neopulse")
+    if name == "pulse":
+        return importlib.import_module("qxdriver_quel.pulse")
     raise AttributeError(name)

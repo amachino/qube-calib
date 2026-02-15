@@ -11,14 +11,13 @@ from collections import deque
 from collections.abc import Iterable
 from typing import Any, Final, cast
 
-from qxdriver_quel import __version__, neopulse
-from qxdriver_quel.clockmaster_compat import SequencerClient, register_box
-from qxdriver_quel.instrument.quel.quel1 import driver as direct
-from qxdriver_quel.resource_map import ResourceMap, create_target_resource_map
+from qxdriver_quel import __version__, driver as direct, pulse
+from qxdriver_quel.clockmaster.compat import SequencerClient, register_box
 from qxdriver_quel.runtime.box_pool import BoxPool
 from qxdriver_quel.runtime.commands import Command
 from qxdriver_quel.runtime.sequencer_core import Sequencer
-from qxdriver_quel.sysconfdb import BoxSetting, SystemConfigDatabase
+from qxdriver_quel.sysconf import BoxSetting, SystemConfigDatabase
+from qxdriver_quel.sysconf.resource_map import ResourceMap, create_target_resource_map
 
 logger = logging.getLogger(__name__)
 
@@ -245,7 +244,7 @@ class Executor:
 
     def add_sequence(
         self,
-        sequence: neopulse.Sequence,
+        sequence: pulse.Sequence,
         *,
         driver: direct.Quel1System | None = None,
         interval: float | None = None,
@@ -253,11 +252,11 @@ class Executor:
         time_to_start: dict[str, int] | None = None,
     ) -> None:
         """
-        Convert a neopulse sequence and enqueue a corresponding sequencer.
+        Convert a pulse sequence and enqueue a corresponding sequencer.
 
         Parameters
         ----------
-        sequence : neopulse.Sequence
+        sequence : pulse.Sequence
             Sequence object to convert and queue.
         driver : direct.Quel1System | None, default=None
             Optional direct driver to execute with instead of pooled boxes.

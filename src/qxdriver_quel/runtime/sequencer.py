@@ -1,6 +1,6 @@
 """Compatibility re-exports for sequencer runtime primitives."""
 
-from qxdriver_quel.e7utils import CaptureParamTools, WaveSequenceTools
+from qxdriver_quel.e7awg.utils import CaptureParamTools, WaveSequenceTools
 from qxdriver_quel.runtime.commands import (
     Command,
     PortConfigAcquirer,

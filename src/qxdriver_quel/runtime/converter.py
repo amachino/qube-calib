@@ -13,18 +13,18 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from qxdriver_quel.e7compat import CaptureParam, WaveSequence
-from qxdriver_quel.e7utils import (
+from qxdriver_quel.e7awg.compat import CaptureParam, WaveSequence
+from qxdriver_quel.e7awg.utils import (
     CaptureParamTools,
     WaveSequenceTools,
     _convert_gen_sampled_sequence_to_blanks_and_waves_chain,
 )
-from qxdriver_quel.neopulse import (
+from qxdriver_quel.pulse import (
     CapSampledSequence,
     GenSampledSequence,
     GenSampledSubSequence,
 )
-from qxdriver_quel.sysconfdb import (
+from qxdriver_quel.sysconf import (
     BoxSetting,
     PortSetting,
     Quel1PortType,

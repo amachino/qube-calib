@@ -10,25 +10,30 @@ import numpy as np
 import numpy.typing as npt
 from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
 
-from qxdriver_quel.e7compat import CaptureModule, CaptureParam, DspUnit, WaveSequence
-from qxdriver_quel.instrument.quel.quel1 import driver as direct
-from qxdriver_quel.neopulse import (
+from qxdriver_quel import driver as direct
+from qxdriver_quel.e7awg.compat import (
+    CaptureModule,
+    CaptureParam,
+    DspUnit,
+    WaveSequence,
+)
+from qxdriver_quel.pulse import (
     CapSampledSequence,
     Capture,
     GenSampledSequence,
     Slot,
     Waveform,
 )
-from qxdriver_quel.resource_map import ResourceMap
 from qxdriver_quel.runtime.box_pool import BoxPool
 from qxdriver_quel.runtime.commands import Command, PortConfigAcquirer, TargetBPC
 from qxdriver_quel.runtime.converter import Converter
-from qxdriver_quel.sysconfdb import (
+from qxdriver_quel.sysconf import (
     BoxSetting,
     PortSetting,
     Quel1PortType,
     SystemConfigDatabase,
 )
+from qxdriver_quel.sysconf.resource_map import ResourceMap
 
 logger = logging.getLogger(__name__)
 

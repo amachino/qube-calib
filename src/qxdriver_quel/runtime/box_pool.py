@@ -7,12 +7,12 @@ from typing import Any, Final, cast
 
 from quel_ic_config import Quel1Box, Quel1BoxType
 
-from qxdriver_quel.clockmaster_compat import (
+from qxdriver_quel.clockmaster.compat import (
     QuBEMasterClient,
     SequencerClient,
     register_box,
 )
-from qxdriver_quel.sysconfdb import Quel1PortType
+from qxdriver_quel.sysconf import Quel1PortType
 
 logger = logging.getLogger(__name__)
 

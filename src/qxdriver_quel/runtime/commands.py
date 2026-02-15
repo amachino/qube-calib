@@ -6,10 +6,10 @@ from typing import Any, TypedDict
 
 from quel_ic_config import Quel1Box
 
-from qxdriver_quel.instrument.quel.quel1 import driver as direct
+from qxdriver_quel import driver as direct
 from qxdriver_quel.runtime.box_pool import BoxPool
 from qxdriver_quel.runtime.converter import DEFAULT_SIDEBAND
-from qxdriver_quel.sysconfdb import Quel1PortType
+from qxdriver_quel.sysconf import Quel1PortType
 
 
 class Command:
