@@ -36,8 +36,8 @@ from qxdriver_quel.qubecalib import (
     WaveSequenceTools,
 )
 
-DirectMultiAction = multi.Action
-DirectSingleAction = single.Action
+MultiAction = multi.Action
+SingleAction = single.Action
 
 __all__ = [
     "DEFAULT_SAMPLING_PERIOD",
@@ -50,10 +50,9 @@ __all__ = [
     "CaptureParamTools",
     "CaptureSlots",
     "Converter",
-    "DirectMultiAction",
-    "DirectSingleAction",
     "GenSampledSequence",
     "GenSampledSubSequence",
+    "MultiAction",
     "NamedBox",
     "QuBEMasterClient",
     "QubeCalib",
@@ -65,6 +64,7 @@ __all__ = [
     "RunitSetting",
     "Sequencer",
     "SequencerClient",
+    "SingleAction",
     "Skew",
     "TriggerSetting",
     "WaveSequenceTools",
