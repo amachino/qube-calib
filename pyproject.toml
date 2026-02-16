@@ -1,19 +1,16 @@
 [build-system]
-requires = ["setuptools >= 61.0"]
+requires = ["setuptools >= 77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "qxdriver-quel"
 dynamic = ["version"]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [{ name = "h403", email = "shiomi@ieee.org" }]
+maintainers = [{ name = "Akinori Machino" }]
 description = "QuEL driver package with qubecalib compatibility"
 readme = "README.md"
 license = { file = "LICENSE" }
-classifiers = [
-    "License :: OSI Approved :: GPL",
-    "Programming Language :: Python :: 3",
-]
 dependencies = [
     "numpy >= 1.0",
     "plotly >= 5.0",
@@ -23,14 +20,10 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest"]
+dev = ["pyright", "pytest", "ruff"]
 
 [tool.setuptools.dynamic]
 version = { attr = "qxdriver_quel.__version__" }
 
 [tool.pytest.ini_options]
-# cf. https://docs.pytest.org/en/6.2.x/pythonpath.html#import-modes
 addopts = "--import-mode=importlib"
-
-[tool.mypy]
-ignore_missing_imports = true

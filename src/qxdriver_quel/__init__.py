@@ -7,7 +7,7 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING
 
-__version__ = "3.1.16beta3"
+__version__ = "0.1.0a1"
 
 if TYPE_CHECKING:
     import qxdriver_quel.pulse as pulse
