@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import importlib
+import sys
+
 
 def test_qxdriver_quel_module_paths_for_backend_are_importable() -> None:
     """Given backend-facing module paths, when importing from qxdriver_quel, then symbols resolve."""
@@ -96,3 +99,61 @@ def test_qxdriver_quel_compat_layer_exports_are_importable() -> None:
     assert BoxPool.__name__ == "BoxPool"
     assert Quel1Box.__name__ == "Quel1Box"
     assert Quel1ConfigOption.__name__ == "Quel1ConfigOption"
+
+
+def test_qxdriver_quel_compat_import_executes_qubex_contract_validation() -> None:
+    """Given compat import, contract validation module is loaded as part of the public entrypoint."""
+    sys.modules.pop("qxdriver_quel.compat.qubex_contract", None)
+    sys.modules.pop("qxdriver_quel.compat", None)
+
+    importlib.import_module("qxdriver_quel.compat")
+
+    assert "qxdriver_quel.compat.qubex_contract" in sys.modules
+
+
+def test_qxdriver_quel_single_setting_exports_align_with_single_action_module() -> None:
+    """Given compat exports, Single* classes match SingleAction module and remain distinct from common classes."""
+    from qxdriver_quel.compat import (
+        Action,
+        AwgId,
+        AwgSetting,
+        MultiAction,
+        RunitId,
+        RunitSetting,
+        SingleAction,
+        SingleAwgId,
+        SingleAwgSetting,
+        SingleRunitId,
+        SingleRunitSetting,
+        SingleTriggerSetting,
+        TriggerSetting,
+    )
+
+    single_module = importlib.import_module(SingleAction.__module__)
+    direct_module = importlib.import_module(Action.__module__)
+    multi_module = importlib.import_module(MultiAction.__module__)
+
+    assert SingleAwgId is single_module.AwgId
+    assert SingleAwgSetting is single_module.AwgSetting
+    assert SingleRunitId is single_module.RunitId
+    assert SingleRunitSetting is single_module.RunitSetting
+    assert SingleTriggerSetting is single_module.TriggerSetting
+
+    assert AwgId is direct_module.AwgId
+    assert AwgSetting is direct_module.AwgSetting
+    assert RunitId is direct_module.RunitId
+    assert RunitSetting is direct_module.RunitSetting
+    assert TriggerSetting is direct_module.TriggerSetting
+
+    assert Action is not SingleAction
+    assert Action is not MultiAction
+    assert SingleAction is not MultiAction
+    assert AwgId is not SingleAwgId
+    assert AwgSetting is not SingleAwgSetting
+    assert RunitId is not SingleRunitId
+    assert RunitSetting is not SingleRunitSetting
+    assert TriggerSetting is not SingleTriggerSetting
+
+    assert Action.__module__.endswith(".driver.common")
+    assert SingleAction.__module__.endswith(".driver.single")
+    assert multi_module.Action is MultiAction

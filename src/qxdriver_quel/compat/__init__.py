@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from qxdriver_quel.compat import qubex_contract as _qubex_contract
 from qxdriver_quel.compat.exports import (
     DEFAULT_SAMPLING_PERIOD,
     Action,
@@ -71,3 +72,6 @@ __all__ = [
     "TriggerSetting",
     "WaveSequenceTools",
 ]
+
+# Import side-effect keeps qubex-facing contract checks active at compat import time.
+_ = _qubex_contract
