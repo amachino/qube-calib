@@ -77,6 +77,8 @@ def test_qxdriver_quel_compat_layer_exports_are_importable() -> None:
         Quel1ConfigOption,
         Sequencer,
         SequencerClient,
+        SingleAwgSetting,
+        SingleRunitSetting,
         Skew,
     )
 
@@ -88,6 +90,8 @@ def test_qxdriver_quel_compat_layer_exports_are_importable() -> None:
     assert GenSampledSubSequence.__name__ == "GenSampledSubSequence"
     assert CapSampledSubSequence.__name__ == "CapSampledSubSequence"
     assert CaptureSlots.__name__ == "CaptureSlots"
+    assert SingleAwgSetting.__name__ == "AwgSetting"
+    assert SingleRunitSetting.__name__ == "RunitSetting"
     assert Skew.__name__ == "Skew"
     assert BoxPool.__name__ == "BoxPool"
     assert Quel1Box.__name__ == "Quel1Box"

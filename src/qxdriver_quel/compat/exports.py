@@ -37,6 +37,11 @@ from qxdriver_quel.tool import Skew
 
 MultiAction = multi.Action
 SingleAction = single.Action
+SingleAwgId = single.AwgId
+SingleAwgSetting = single.AwgSetting
+SingleRunitId = single.RunitId
+SingleRunitSetting = single.RunitSetting
+SingleTriggerSetting = single.TriggerSetting
 
 
 EXPORTS: dict[str, object] = {
@@ -64,6 +69,11 @@ EXPORTS: dict[str, object] = {
     "Sequencer": Sequencer,
     "SequencerClient": SequencerClient,
     "SingleAction": SingleAction,
+    "SingleAwgId": SingleAwgId,
+    "SingleAwgSetting": SingleAwgSetting,
+    "SingleRunitId": SingleRunitId,
+    "SingleRunitSetting": SingleRunitSetting,
+    "SingleTriggerSetting": SingleTriggerSetting,
     "Skew": Skew,
     "TriggerSetting": TriggerSetting,
     "WaveSequenceTools": WaveSequenceTools,
