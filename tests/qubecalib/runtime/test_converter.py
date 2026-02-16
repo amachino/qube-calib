@@ -4,10 +4,13 @@
 
 from __future__ import annotations
 
+import logging
+import warnings
 from types import SimpleNamespace
 from typing import Any, cast
 
 import numpy as np
+import pytest
 from qxdriver_quel.pulse import GenSampledSequence, GenSampledSubSequence
 from qxdriver_quel.runtime.converter import Converter
 from qxdriver_quel.sysconf import BoxSetting, PortSetting
@@ -83,3 +86,65 @@ def test_convert_to_gen_sequence_does_not_mutate_source_waveform() -> None:
     assert ("B0", port, channel) in out
     np.testing.assert_array_equal(gen_seq.sub_sequences[0].real, source_real)
     np.testing.assert_array_equal(gen_seq.sub_sequences[0].imag, source_imag)
+
+
+def test_calc_modulation_frequency_logs_debug_for_direct_conversion_over_nyquist(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Given direct-conversion frequency above Nyquist, when calculating modulation frequency, then debug is logged and no warning is emitted."""
+    port_config = SimpleNamespace(
+        lo_freq=None,
+        cnco_freq=5.0e9,
+        fnco_freq=0.0,
+        sideband="U",
+        dump_config={"direction": "out"},
+        box_name="B0",
+        port=0,
+        channel=0,
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with caplog.at_level(logging.DEBUG, logger="qxdriver_quel.runtime.converter"):
+            freq = Converter.calc_modulation_frequency(
+                f_target=5.3,
+                port_config=cast(Any, port_config),
+            )
+
+    assert freq == pytest.approx(0.3)
+    assert not caught
+    assert any(
+        "Modulation frequency abs(" in rec.getMessage() for rec in caplog.records
+    )
+    assert any("too high" in rec.getMessage() for rec in caplog.records)
+
+
+def test_calc_modulation_frequency_logs_debug_for_mixer_output_over_nyquist(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Given mixer output frequency above Nyquist, when calculating modulation frequency, then debug is logged and no warning is emitted."""
+    port_config = SimpleNamespace(
+        lo_freq=10.0e9,
+        cnco_freq=1.0e9,
+        fnco_freq=0.0,
+        sideband="U",
+        dump_config={"direction": "out"},
+        box_name="B0",
+        port=1,
+        channel=0,
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with caplog.at_level(logging.DEBUG, logger="qxdriver_quel.runtime.converter"):
+            freq = Converter.calc_modulation_frequency(
+                f_target=11.3,
+                port_config=cast(Any, port_config),
+            )
+
+    assert freq == pytest.approx(0.3)
+    assert not caught
+    assert any(
+        "Modulation frequency abs(" in rec.getMessage() for rec in caplog.records
+    )
+    assert any("too high" in rec.getMessage() for rec in caplog.records)

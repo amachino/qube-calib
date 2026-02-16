@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import math
-import warnings
 from collections import Counter
 from collections.abc import MutableMapping
 from copy import deepcopy
@@ -52,6 +51,10 @@ class Sideband(Enum):
 
 DEFAULT_SIDEBAND = "U"
 SAMPLING_PERIOD_NS = 2.0
+
+# Sampled waveforms are represented at 2 ns steps (500 MS/s), so the modulation
+# term must stay within the Nyquist band (+/- 250 MHz) to avoid aliasing.
+MAX_MODULATION_FREQUENCY_GHZ = 0.25
 
 
 class Converter:
@@ -517,11 +520,18 @@ class Converter:
         f_cnco = port_config.cnco_freq * 1e-9  # Hz -> GHz
         f_fnco = port_config.fnco_freq * 1e-9  # Hz -> GHz
         f_diff = f_target - (f_cnco + f_fnco)
-        if abs(f_diff) > 0.5:
+        if abs(f_diff) > MAX_MODULATION_FREQUENCY_GHZ:
             p = port_config
-            warnings.warn(
-                f"Modulation frequency abs({f_diff}) of {p.box_name}:{p.port}:{p.channel} is too high. f_target={f_target} GHz, f_cnco={f_cnco} GHz, f_fnco={f_fnco} GHz",
-                stacklevel=2,
+            logger.debug(
+                "Modulation frequency abs(%s) of %s:%s:%s is too high. "
+                "f_target=%s GHz, f_cnco=%s GHz, f_fnco=%s GHz",
+                f_diff,
+                p.box_name,
+                p.port,
+                p.channel,
+                f_target,
+                f_cnco,
+                f_fnco,
             )
         return f_diff  # GHz
 
@@ -566,11 +576,21 @@ class Converter:
                 sideband=sideband,
             )
 
-            if abs(f_diff) > 0.5:
+            if abs(f_diff) > MAX_MODULATION_FREQUENCY_GHZ:
                 p = port_config
-                warnings.warn(
-                    f"Modulation frequency abs({f_diff}) of {p.box_name}:{p.port}:{p.channel} is too high. f_target={f_target} GHz, f_lo={f_lo} GHz, f_cnco={f_cnco} GHz, f_fnco={f_fnco} GHz, sideband={sideband}",
-                    stacklevel=2,
+                logger.debug(
+                    "Modulation frequency abs(%s) of %s:%s:%s is too high. "
+                    "f_target=%s GHz, f_lo=%s GHz, f_cnco=%s GHz, f_fnco=%s GHz, "
+                    "sideband=%s",
+                    f_diff,
+                    p.box_name,
+                    p.port,
+                    p.channel,
+                    f_target,
+                    f_lo,
+                    f_cnco,
+                    f_fnco,
+                    sideband,
                 )
         elif port_config.dump_config["direction"] == "in":
             opposite = "L" if sideband == "U" else "U"
@@ -589,11 +609,21 @@ class Converter:
                 sideband=opposite,
             )
             mindiff = f_diff if abs(f_diff) < abs(o_f_diff) else o_f_diff
-            if abs(mindiff) > 0.25:
+            if abs(mindiff) > MAX_MODULATION_FREQUENCY_GHZ:
                 p = port_config
-                warnings.warn(
-                    f"Modulation frequency abs({mindiff}) of {p.box_name}:{p.port}:{p.channel} is too high. f_target={f_target} GHz, f_lo={f_lo} GHz, f_cnco={f_cnco} GHz, f_fnco={f_fnco} GHz, sideband={sideband}",
-                    stacklevel=2,
+                logger.debug(
+                    "Modulation frequency abs(%s) of %s:%s:%s is too high. "
+                    "f_target=%s GHz, f_lo=%s GHz, f_cnco=%s GHz, f_fnco=%s GHz, "
+                    "sideband=%s",
+                    mindiff,
+                    p.box_name,
+                    p.port,
+                    p.channel,
+                    f_target,
+                    f_lo,
+                    f_cnco,
+                    f_fnco,
+                    sideband,
                 )
         else:
             raise ValueError(f"{port_config} invalid direction")
