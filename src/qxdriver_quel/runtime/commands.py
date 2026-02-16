@@ -8,7 +8,6 @@ from quel_ic_config import Quel1Box
 
 from qxdriver_quel import driver as direct
 from qxdriver_quel.runtime.box_pool import BoxPool
-from qxdriver_quel.runtime.converter import DEFAULT_SIDEBAND
 from qxdriver_quel.sysconf import Quel1PortType
 
 
@@ -52,7 +51,9 @@ class PortConfigAcquirer:
                 box=box,
             )["ports"]
             self.dump_config = dp = dump_box[port]
-            sideband = dp.get("sideband", DEFAULT_SIDEBAND)
+            # Keep sideband as-is, including None. Capture paths can intentionally
+            # use sideband=None, and forcing a default sideband causes regressions.
+            sideband = dp.get("sideband")
             fnco_freq = 0
             if port in box.get_output_ports():
                 fnco_freq = dp["channels"][channel]["fnco_freq"]
@@ -66,18 +67,18 @@ class PortConfigAcquirer:
                     if lpbackps:
                         lpbackp = next(iter(lpbackps))
                         dumped_port = dump_box[lpbackp]
-                        sideband = dumped_port.get("sideband", DEFAULT_SIDEBAND)
+                        sideband = dumped_port.get("sideband")
             self.lo_freq: float | None = dp.get("lo_freq", None)
             self.cnco_freq: float = dp["cnco_freq"]
             self.fnco_freq: float = fnco_freq
-            self.sideband: str = sideband
+            self.sideband: str | None = sideband
         else:
             self.dump_config = driver.dump_port(box_name, port)
             self.lo_freq = driver.get_lo_freq(box_name, port)
             self.cnco_freq = driver.get_cnco_freq(box_name, port)
             self.fnco_freq = driver.get_fnco_freq(box_name, port, channel)
-            sideband = driver.get_sideband(box_name, port)
-            self.sideband = sideband if sideband is not None else DEFAULT_SIDEBAND
+            # Preserve None from driver instead of coercing to default.
+            self.sideband = driver.get_sideband(box_name, port)
         self.box_name = box_name
         self.port = port
         self.channel = channel
