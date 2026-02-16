@@ -4,12 +4,54 @@ from __future__ import annotations
 
 import logging
 from contextlib import suppress
+from dataclasses import dataclass, field
+from threading import RLock
 
 from quel_ic_config import Quel1Box, QuelClockMasterV1
 
 _BOX_BY_SSS_IPADDR: dict[str, Quel1Box] = {}
 logger = logging.getLogger(__name__)
 _CLOCKMASTER_BOXES_ATTR = "_boxes"
+
+
+@dataclass
+class _SharedClockMaster:
+    """Shared clock-master session and synchronization primitives."""
+
+    master: QuelClockMasterV1
+    ref_count: int = 0
+    lock: RLock = field(default_factory=RLock)
+
+
+_SHARED_CLOCKMASTERS: dict[str, _SharedClockMaster] = {}
+_SHARED_CLOCKMASTERS_LOCK = RLock()
+
+
+def _acquire_shared_clockmaster(ipaddr: str) -> _SharedClockMaster:
+    """Acquire or create one shared clock-master session for the given IP."""
+    with _SHARED_CLOCKMASTERS_LOCK:
+        shared = _SHARED_CLOCKMASTERS.get(ipaddr)
+        if shared is None:
+            shared = _SharedClockMaster(
+                master=QuelClockMasterV1(ipaddr=ipaddr, boxes=[])
+            )
+            _SHARED_CLOCKMASTERS[ipaddr] = shared
+        shared.ref_count += 1
+        return shared
+
+
+def _release_shared_clockmaster(ipaddr: str, shared: _SharedClockMaster) -> None:
+    """Release one shared clock-master reference and terminate at ref-count zero."""
+    with _SHARED_CLOCKMASTERS_LOCK:
+        current = _SHARED_CLOCKMASTERS.get(ipaddr)
+        if current is None or current is not shared:
+            return
+        shared.ref_count -= 1
+        if shared.ref_count > 0:
+            return
+        with shared.lock:
+            shared.master.terminate()
+        del _SHARED_CLOCKMASTERS[ipaddr]
 
 
 def register_box(box: Quel1Box) -> None:
@@ -63,7 +105,7 @@ class QuBEMasterClient:
         if resolved is None:
             raise ValueError("master_ipaddr or ipaddr must be provided")
         self._master_ipaddr = str(resolved)
-        self._master = QuelClockMasterV1(ipaddr=self._master_ipaddr, boxes=[])
+        self._shared_master = _acquire_shared_clockmaster(self._master_ipaddr)
         self._closed = False
 
     def __del__(self) -> None:
@@ -71,11 +113,16 @@ class QuBEMasterClient:
         with suppress(Exception):
             self.close()
 
+    @property
+    def _master(self) -> QuelClockMasterV1:
+        """Return the shared clock-master session."""
+        return self._shared_master.master
+
     def close(self) -> None:
         """Terminate the cached clock-master session."""
         if self._closed:
             return
-        self._master.terminate()
+        _release_shared_clockmaster(self._master_ipaddr, self._shared_master)
         self._closed = True
 
     def _set_master_boxes(self, boxes: list[Quel1Box]) -> None:
@@ -98,8 +145,9 @@ class QuBEMasterClient:
             if box is None:
                 raise RuntimeError(f"box for SSS IP {ipaddr} is not registered")
             boxes.append(box)
-        self._set_master_boxes(boxes)
-        self._master.sync_boxes()
+        with self._shared_master.lock:
+            self._set_master_boxes(boxes)
+            self._master.sync_boxes()
 
     def read_clock(self) -> tuple[bool, int]:
         """
@@ -110,7 +158,8 @@ class QuBEMasterClient:
         tuple[bool, int]
             `(success, current_counter)`.
         """
-        counter = int(self._master.get_current_timecounter())
+        with self._shared_master.lock:
+            counter = int(self._master.get_current_timecounter())
         return True, counter
 
     def reset(self) -> bool:
