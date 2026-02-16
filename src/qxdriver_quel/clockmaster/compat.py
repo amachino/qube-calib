@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
+from contextlib import suppress
 
 from quel_ic_config import Quel1Box, QuelClockMasterV1
 
 _BOX_BY_SSS_IPADDR: dict[str, Quel1Box] = {}
 logger = logging.getLogger(__name__)
+_CLOCKMASTER_BOXES_ATTR = "_boxes"
 
 
 def register_box(box: Quel1Box) -> None:
@@ -61,6 +63,25 @@ class QuBEMasterClient:
         if resolved is None:
             raise ValueError("master_ipaddr or ipaddr must be provided")
         self._master_ipaddr = str(resolved)
+        self._master = QuelClockMasterV1(ipaddr=self._master_ipaddr, boxes=[])
+        self._closed = False
+
+    def __del__(self) -> None:
+        """Terminate the cached clock-master session on object finalization."""
+        with suppress(Exception):
+            self.close()
+
+    def close(self) -> None:
+        """Terminate the cached clock-master session."""
+        if self._closed:
+            return
+        self._master.terminate()
+        self._closed = True
+
+    def _set_master_boxes(self, boxes: list[Quel1Box]) -> None:
+        """Update target boxes on the cached clock-master session."""
+        # `QuelClockMasterV1` does not expose a public setter for sync targets.
+        setattr(self._master, _CLOCKMASTER_BOXES_ATTR, set(boxes))
 
     def kick_clock_synch(self, box_sss_ipaddrs: list[str]) -> None:
         """
@@ -77,11 +98,8 @@ class QuBEMasterClient:
             if box is None:
                 raise RuntimeError(f"box for SSS IP {ipaddr} is not registered")
             boxes.append(box)
-        master = QuelClockMasterV1(ipaddr=self._master_ipaddr, boxes=boxes)
-        try:
-            master.sync_boxes()
-        finally:
-            master.terminate()
+        self._set_master_boxes(boxes)
+        self._master.sync_boxes()
 
     def read_clock(self) -> tuple[bool, int]:
         """
@@ -92,11 +110,7 @@ class QuBEMasterClient:
         tuple[bool, int]
             `(success, current_counter)`.
         """
-        master = QuelClockMasterV1(ipaddr=self._master_ipaddr, boxes=[])
-        try:
-            counter = int(master.get_current_timecounter())
-        finally:
-            master.terminate()
+        counter = int(self._master.get_current_timecounter())
         return True, counter
 
     def reset(self) -> bool:
