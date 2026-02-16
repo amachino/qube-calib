@@ -30,6 +30,13 @@ class _FakeBox:
         return {0} if port == 1 else set()
 
 
+class _FakeBoxNoLoopback(_FakeBox):
+    def get_loopbacks_of_port(self, port: int) -> set[int]:
+        """Return no loopback source ports."""
+        _ = port
+        return set()
+
+
 class _FakeBoxPool:
     def __init__(self, ports: dict[int, dict[str, Any]]) -> None:
         self._ports = ports
@@ -162,6 +169,29 @@ def test_port_config_acquirer_preserves_none_when_direct_conversion() -> None:
     assert acquirer.sideband is None
 
 
+def test_port_config_acquirer_allows_missing_sideband_on_capture_input_without_loopback() -> (
+    None
+):
+    """Given capture input without loopback and missing sideband, when acquiring config, then sideband remains None."""
+    ports = {
+        1: {
+            "runits": {0: {"fnco_freq": 0.0}},
+            "sideband": None,
+            "lo_freq": 9.0e9,
+            "cnco_freq": 1.0e9,
+        },
+    }
+    acquirer = PortConfigAcquirer(
+        boxpool=cast(Any, _FakeBoxPool(ports)),
+        box_name="B0",
+        box=cast(Any, _FakeBoxNoLoopback()),
+        port=1,
+        channel=0,
+    )
+
+    assert acquirer.sideband is None
+
+
 def test_port_config_acquirer_uses_loopback_output_sideband_on_driver_path() -> None:
     """Given input port with driver path, when acquiring config, then sideband follows paired output port."""
     acquirer = PortConfigAcquirer(
@@ -186,6 +216,32 @@ def test_port_config_acquirer_uses_loopback_output_sideband_on_driver_path() -> 
     )
 
     assert acquirer.sideband == "L"
+
+
+def test_port_config_acquirer_allows_missing_sideband_on_driver_capture_input_without_loopback() -> (
+    None
+):
+    """Given driver capture input without loopback and missing sideband, when acquiring config, then sideband remains None."""
+    acquirer = PortConfigAcquirer(
+        boxpool=cast(Any, _FakeBoxPool({})),
+        box_name="B0",
+        box=cast(Any, _FakeBoxNoLoopback()),
+        port=1,
+        channel=0,
+        driver=cast(
+            Any,
+            _FakeDriver(
+                sidebands={
+                    1: None,
+                },
+                lo_freqs={
+                    1: 9.0e9,
+                },
+            ),
+        ),
+    )
+
+    assert acquirer.sideband is None
 
 
 def test_port_config_acquirer_raises_when_output_sideband_missing_with_lo_on_driver_path() -> (

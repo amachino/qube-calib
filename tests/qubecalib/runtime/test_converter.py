@@ -148,3 +148,24 @@ def test_calc_modulation_frequency_logs_debug_for_mixer_output_over_nyquist(
         "Modulation frequency abs(" in rec.getMessage() for rec in caplog.records
     )
     assert any("too high" in rec.getMessage() for rec in caplog.records)
+
+
+def test_calc_modulation_frequency_infers_missing_sideband_on_mixer_input() -> None:
+    """Given mixer input without sideband, when calculating modulation frequency, then smaller-detuning sign is used."""
+    port_config = SimpleNamespace(
+        lo_freq=9.0e9,
+        cnco_freq=1.0e9,
+        fnco_freq=0.0,
+        sideband=None,
+        dump_config={"direction": "in"},
+        box_name="B0",
+        port=12,
+        channel=0,
+    )
+
+    freq = Converter.calc_modulation_frequency(
+        f_target=10.3,
+        port_config=cast(Any, port_config),
+    )
+
+    assert freq == pytest.approx(0.3)

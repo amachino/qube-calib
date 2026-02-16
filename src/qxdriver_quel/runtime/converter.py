@@ -568,6 +568,10 @@ class Converter:
         sideband = port_config.sideband
 
         if port_config.dump_config["direction"] == "out":
+            if sideband not in {"U", "L"}:
+                raise ValueError(
+                    f"sideband is missing for mixer output port {port_config.box_name}:{port_config.port}"
+                )
             f_diff = cls._calc_modulation_frequency(
                 target_freq=f_target,
                 lo_freq=f_lo,
@@ -593,22 +597,78 @@ class Converter:
                     sideband,
                 )
         elif port_config.dump_config["direction"] == "in":
-            opposite = "L" if sideband == "U" else "U"
-            f_diff = cls._calc_modulation_frequency(
-                target_freq=f_target,
-                lo_freq=f_lo,
-                cnco_freq=f_cnco,
-                fnco_freq=f_fnco,
-                sideband=sideband,
-            )
-            o_f_diff = cls._calc_modulation_frequency(
-                target_freq=f_target,
-                lo_freq=f_lo,
-                cnco_freq=f_cnco,
-                fnco_freq=f_fnco,
-                sideband=opposite,
-            )
-            mindiff = f_diff if abs(f_diff) < abs(o_f_diff) else o_f_diff
+            if sideband == "U":
+                f_diff = cls._calc_modulation_frequency(
+                    target_freq=f_target,
+                    lo_freq=f_lo,
+                    cnco_freq=f_cnco,
+                    fnco_freq=f_fnco,
+                    sideband="U",
+                )
+                o_f_diff = cls._calc_modulation_frequency(
+                    target_freq=f_target,
+                    lo_freq=f_lo,
+                    cnco_freq=f_cnco,
+                    fnco_freq=f_fnco,
+                    sideband="L",
+                )
+                mindiff = f_diff if abs(f_diff) < abs(o_f_diff) else o_f_diff
+            elif sideband == "L":
+                f_diff = cls._calc_modulation_frequency(
+                    target_freq=f_target,
+                    lo_freq=f_lo,
+                    cnco_freq=f_cnco,
+                    fnco_freq=f_fnco,
+                    sideband="L",
+                )
+                o_f_diff = cls._calc_modulation_frequency(
+                    target_freq=f_target,
+                    lo_freq=f_lo,
+                    cnco_freq=f_cnco,
+                    fnco_freq=f_fnco,
+                    sideband="U",
+                )
+                mindiff = f_diff if abs(f_diff) < abs(o_f_diff) else o_f_diff
+            elif sideband is None:
+                upper = cls._calc_modulation_frequency(
+                    target_freq=f_target,
+                    lo_freq=f_lo,
+                    cnco_freq=f_cnco,
+                    fnco_freq=f_fnco,
+                    sideband="U",
+                )
+                lower = cls._calc_modulation_frequency(
+                    target_freq=f_target,
+                    lo_freq=f_lo,
+                    cnco_freq=f_cnco,
+                    fnco_freq=f_fnco,
+                    sideband="L",
+                )
+                # When capture-side SSB is unavailable, pick the smaller-detuning sign.
+                if abs(upper) <= abs(lower):
+                    f_diff = upper
+                    o_f_diff = lower
+                    sideband = "U"
+                else:
+                    f_diff = lower
+                    o_f_diff = upper
+                    sideband = "L"
+                mindiff = f_diff
+                p = port_config
+                logger.debug(
+                    "Capture port sideband missing; inferred %s for %s:%s:%s. "
+                    "f_target=%s GHz, f_lo=%s GHz, f_cnco=%s GHz, f_fnco=%s GHz",
+                    sideband,
+                    p.box_name,
+                    p.port,
+                    p.channel,
+                    f_target,
+                    f_lo,
+                    f_cnco,
+                    f_fnco,
+                )
+            else:
+                raise ValueError(f"invalid sideband: {sideband}")
             if abs(mindiff) > MAX_MODULATION_FREQUENCY_GHZ:
                 p = port_config
                 logger.debug(

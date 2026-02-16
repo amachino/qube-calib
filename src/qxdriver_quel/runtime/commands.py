@@ -37,12 +37,17 @@ def _resolve_sideband(
     lo_freq: float | None,
     box_name: str,
     port: Quel1PortType,
+    allow_missing_mixer_sideband: bool = False,
 ) -> str | None:
     """Normalize sideband while preserving direct-conversion behavior."""
     if sideband in {"U", "L"}:
         return sideband
     if sideband is None and lo_freq is None:
         # Direct-conversion transceivers do not require explicit sideband.
+        return None
+    if sideband is None and allow_missing_mixer_sideband:
+        # Some capture input ports expose LO but have no explicit SSB in dump data.
+        # In that case, keep None and let converter infer sign from target detuning.
         return None
     if sideband is None:
         raise ValueError(
@@ -75,11 +80,13 @@ class PortConfigAcquirer:
                 port in box.get_read_input_ports()
                 or port in box.get_monitor_input_ports()
             )
+            has_loopback_source = False
             sideband_source_port = port
             sideband_source_dump = dp
             if is_capture_input:
                 lpbackps = box.get_loopbacks_of_port(port)
                 if lpbackps:
+                    has_loopback_source = True
                     sideband_source_port = next(iter(lpbackps))
                     sideband_source_dump = dump_box[sideband_source_port]
             sideband = _resolve_sideband(
@@ -87,6 +94,8 @@ class PortConfigAcquirer:
                 lo_freq=sideband_source_dump.get("lo_freq"),
                 box_name=box_name,
                 port=sideband_source_port,
+                allow_missing_mixer_sideband=is_capture_input
+                and not has_loopback_source,
             )
             fnco_freq = 0
             if port in box.get_output_ports():
@@ -118,11 +127,14 @@ class PortConfigAcquirer:
                         port=lpbackp,
                     )
                 else:
+                    # Some boxes do not define loopback source ports for read inputs.
+                    # Keep missing SSB as None to allow converter-side inference.
                     sideband = _resolve_sideband(
                         sideband=driver.get_sideband(box_name, port),
                         lo_freq=self.lo_freq,
                         box_name=box_name,
                         port=port,
+                        allow_missing_mixer_sideband=True,
                     )
             else:
                 sideband = _resolve_sideband(
