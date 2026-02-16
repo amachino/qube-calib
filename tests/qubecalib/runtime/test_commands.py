@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+import pytest
 from qxdriver_quel.runtime.commands import PortConfigAcquirer
 
 
@@ -43,17 +44,24 @@ class _FakeBoxPool:
 
 
 class _FakeDriver:
+    def __init__(
+        self,
+        *,
+        sidebands: dict[int, str | None],
+        lo_freqs: dict[int, float | None],
+    ) -> None:
+        self._sidebands = sidebands
+        self._lo_freqs = lo_freqs
+
     def dump_port(self, box_name: str, port: int) -> dict[str, Any]:
         """Return one dumped port config."""
         _ = box_name
-        _ = port
         return {"direction": "in"}
 
     def get_lo_freq(self, box_name: str, port: int) -> float | None:
         """Return a fixed LO frequency."""
         _ = box_name
-        _ = port
-        return None
+        return self._lo_freqs[port]
 
     def get_cnco_freq(self, box_name: str, port: int) -> float:
         """Return a fixed CNCO frequency."""
@@ -69,18 +77,17 @@ class _FakeDriver:
         return 0.0
 
     def get_sideband(self, box_name: str, port: int) -> str | None:
-        """Return sideband as None."""
+        """Return sideband for one port."""
         _ = box_name
-        _ = port
-        return None
+        return self._sidebands[port]
 
 
-def test_port_config_acquirer_keeps_none_sideband_on_boxpool_path() -> None:
-    """Given None sideband in cache, when acquiring capture-port config, then sideband stays None."""
+def test_port_config_acquirer_uses_loopback_output_sideband_for_input_port() -> None:
+    """Given input port, when acquiring config, then sideband follows the paired output port."""
     ports = {
         0: {
             "channels": {0: {"fnco_freq": 0.0}},
-            "sideband": None,
+            "sideband": "L",
             "lo_freq": 9.0e9,
             "cnco_freq": 1.0e9,
         },
@@ -99,18 +106,110 @@ def test_port_config_acquirer_keeps_none_sideband_on_boxpool_path() -> None:
         channel=0,
     )
 
+    assert acquirer.sideband == "L"
+
+
+def test_port_config_acquirer_raises_when_output_sideband_missing_with_lo() -> None:
+    """Given missing output sideband with LO, when acquiring input config, then an error is raised."""
+    ports = {
+        0: {
+            "channels": {0: {"fnco_freq": 0.0}},
+            "sideband": None,
+            "lo_freq": 9.0e9,
+            "cnco_freq": 1.0e9,
+        },
+        1: {
+            "runits": {0: {"fnco_freq": 0.0}},
+            "sideband": None,
+            "lo_freq": 9.0e9,
+            "cnco_freq": 1.0e9,
+        },
+    }
+    with pytest.raises(ValueError, match="sideband is missing"):
+        PortConfigAcquirer(
+            boxpool=cast(Any, _FakeBoxPool(ports)),
+            box_name="B0",
+            box=cast(Any, _FakeBox()),
+            port=1,
+            channel=0,
+        )
+
+
+def test_port_config_acquirer_preserves_none_when_direct_conversion() -> None:
+    """Given missing sideband without LO, when acquiring input config, then sideband remains None."""
+    ports = {
+        0: {
+            "channels": {0: {"fnco_freq": 0.0}},
+            "sideband": None,
+            "lo_freq": None,
+            "cnco_freq": 5.0e9,
+        },
+        1: {
+            "runits": {0: {"fnco_freq": 0.0}},
+            "sideband": None,
+            "lo_freq": None,
+            "cnco_freq": 5.0e9,
+        },
+    }
+    acquirer = PortConfigAcquirer(
+        boxpool=cast(Any, _FakeBoxPool(ports)),
+        box_name="B0",
+        box=cast(Any, _FakeBox()),
+        port=1,
+        channel=0,
+    )
+
     assert acquirer.sideband is None
 
 
-def test_port_config_acquirer_keeps_none_sideband_on_driver_path() -> None:
-    """Given None sideband from driver, when acquiring config, then sideband stays None."""
+def test_port_config_acquirer_uses_loopback_output_sideband_on_driver_path() -> None:
+    """Given input port with driver path, when acquiring config, then sideband follows paired output port."""
     acquirer = PortConfigAcquirer(
         boxpool=cast(Any, _FakeBoxPool({})),
         box_name="B0",
         box=cast(Any, _FakeBox()),
         port=1,
         channel=0,
-        driver=cast(Any, _FakeDriver()),
+        driver=cast(
+            Any,
+            _FakeDriver(
+                sidebands={
+                    0: "L",
+                    1: None,
+                },
+                lo_freqs={
+                    0: 9.0e9,
+                    1: 9.0e9,
+                },
+            ),
+        ),
     )
 
-    assert acquirer.sideband is None
+    assert acquirer.sideband == "L"
+
+
+def test_port_config_acquirer_raises_when_output_sideband_missing_with_lo_on_driver_path() -> (
+    None
+):
+    """Given missing loopback output sideband with LO on driver path, when acquiring input config, then an error is raised."""
+    with pytest.raises(ValueError, match="sideband is missing"):
+        PortConfigAcquirer(
+            boxpool=cast(Any, _FakeBoxPool({})),
+            box_name="B0",
+            box=cast(Any, _FakeBox()),
+            port=1,
+            channel=0,
+            driver=cast(
+                Any,
+                _FakeDriver(
+                    sidebands={
+                        0: None,
+                        1: None,
+                    },
+                    lo_freqs={
+                        0: 9.0e9,
+                        1: 9.0e9,
+                    },
+                ),
+            ),
+        )

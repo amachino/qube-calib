@@ -31,6 +31,26 @@ class TargetBPC(TypedDict):
     box_name: str
 
 
+def _resolve_sideband(
+    *,
+    sideband: str | None,
+    lo_freq: float | None,
+    box_name: str,
+    port: Quel1PortType,
+) -> str | None:
+    """Normalize sideband while preserving direct-conversion behavior."""
+    if sideband in {"U", "L"}:
+        return sideband
+    if sideband is None and lo_freq is None:
+        # Direct-conversion transceivers do not require explicit sideband.
+        return None
+    if sideband is None:
+        raise ValueError(
+            f"sideband is missing for mixer-based port {box_name}:{port} (lo_freq={lo_freq})"
+        )
+    raise ValueError(f"invalid sideband: {sideband}")
+
+
 class PortConfigAcquirer:
     """Collect port configuration fields used by sequence conversion."""
 
@@ -51,23 +71,28 @@ class PortConfigAcquirer:
                 box=box,
             )["ports"]
             self.dump_config = dp = dump_box[port]
-            # Keep sideband as-is, including None. Capture paths can intentionally
-            # use sideband=None, and forcing a default sideband causes regressions.
-            sideband = dp.get("sideband")
+            is_capture_input = port in box.get_input_ports() and (
+                port in box.get_read_input_ports()
+                or port in box.get_monitor_input_ports()
+            )
+            sideband_source_port = port
+            sideband_source_dump = dp
+            if is_capture_input:
+                lpbackps = box.get_loopbacks_of_port(port)
+                if lpbackps:
+                    sideband_source_port = next(iter(lpbackps))
+                    sideband_source_dump = dump_box[sideband_source_port]
+            sideband = _resolve_sideband(
+                sideband=sideband_source_dump.get("sideband"),
+                lo_freq=sideband_source_dump.get("lo_freq"),
+                box_name=box_name,
+                port=sideband_source_port,
+            )
             fnco_freq = 0
             if port in box.get_output_ports():
                 fnco_freq = dp["channels"][channel]["fnco_freq"]
             if port in box.get_input_ports():
                 fnco_freq = dp["runits"][channel]["fnco_freq"]
-                if (
-                    port in box.get_read_input_ports()
-                    or port in box.get_monitor_input_ports()
-                ):
-                    lpbackps = box.get_loopbacks_of_port(port)
-                    if lpbackps:
-                        lpbackp = next(iter(lpbackps))
-                        dumped_port = dump_box[lpbackp]
-                        sideband = dumped_port.get("sideband")
             self.lo_freq: float | None = dp.get("lo_freq", None)
             self.cnco_freq: float = dp["cnco_freq"]
             self.fnco_freq: float = fnco_freq
@@ -77,8 +102,36 @@ class PortConfigAcquirer:
             self.lo_freq = driver.get_lo_freq(box_name, port)
             self.cnco_freq = driver.get_cnco_freq(box_name, port)
             self.fnco_freq = driver.get_fnco_freq(box_name, port, channel)
-            # Preserve None from driver instead of coercing to default.
-            self.sideband = driver.get_sideband(box_name, port)
+            is_capture_input = port in box.get_input_ports() and (
+                port in box.get_read_input_ports()
+                or port in box.get_monitor_input_ports()
+            )
+            if is_capture_input:
+                lpbackps = box.get_loopbacks_of_port(port)
+                if lpbackps:
+                    lpbackp = next(iter(lpbackps))
+                    # Keep capture input SSB aligned with its paired output port.
+                    sideband = _resolve_sideband(
+                        sideband=driver.get_sideband(box_name, lpbackp),
+                        lo_freq=driver.get_lo_freq(box_name, lpbackp),
+                        box_name=box_name,
+                        port=lpbackp,
+                    )
+                else:
+                    sideband = _resolve_sideband(
+                        sideband=driver.get_sideband(box_name, port),
+                        lo_freq=self.lo_freq,
+                        box_name=box_name,
+                        port=port,
+                    )
+            else:
+                sideband = _resolve_sideband(
+                    sideband=driver.get_sideband(box_name, port),
+                    lo_freq=self.lo_freq,
+                    box_name=box_name,
+                    port=port,
+                )
+            self.sideband = sideband
         self.box_name = box_name
         self.port = port
         self.channel = channel
