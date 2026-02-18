@@ -151,7 +151,10 @@ class WaveSequenceTools:
             iq_samples=s,
             # NOTE: If `interval_words` came from floor conversion, this blank
             # is computed against the shortened interval definition.
-            num_blank_words=interval_words - total_duration_in_words,
+            # Treat interval as a lower bound for total chunk length.
+            # If waveform packing exceeds the requested interval, clamp the
+            # trailing blank to zero to keep chunk metadata valid.
+            num_blank_words=max(0, interval_words - total_duration_in_words),
             num_repeats=1,
         )
         return wseq

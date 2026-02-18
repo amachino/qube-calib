@@ -308,3 +308,30 @@ def test_wave_create_places_subsequences_at_expected_offsets() -> None:
     )
 
     np.testing.assert_array_equal(samples[:9], expected_head)
+
+
+def test_wave_create_clamps_negative_chunk_blank_to_zero() -> None:
+    """Given too-short interval, when creating WaveSequence, then chunk blank words are clamped to zero."""
+    sequence = GenSampledSequence(
+        target_name="RQ00",
+        prev_blank=0,
+        post_blank=0,
+        repeats=1,
+        sub_sequences=[
+            GenSampledSubSequence(
+                real=np.array([0.1, 0.2]),
+                imag=np.array([0.0, 0.0]),
+                repeats=1,
+                post_blank=0,
+            )
+        ],
+    )
+
+    wseq = WaveSequenceTools.create(
+        sequence=sequence,
+        wait_words=0,
+        repeats=1,
+        interval_samples=0,
+    )
+
+    assert wseq.chunk(0).num_blank_words == 0
