@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from qxdriver_quel.e7awg.compat import WaveSequence
 from qxdriver_quel.e7awg.utils import (
     CaptureParamTools,
     WaveSequenceTools,
@@ -310,8 +311,8 @@ def test_wave_create_places_subsequences_at_expected_offsets() -> None:
     np.testing.assert_array_equal(samples[:9], expected_head)
 
 
-def test_wave_create_clamps_negative_chunk_blank_to_zero() -> None:
-    """Given too-short interval, when creating WaveSequence, then chunk blank words are clamped to zero."""
+def test_wave_create_raises_when_interval_is_shorter_than_waveform() -> None:
+    """Given too-short interval, when creating WaveSequence, then ValueError is raised."""
     sequence = GenSampledSequence(
         target_name="RQ00",
         prev_blank=0,
@@ -319,19 +320,97 @@ def test_wave_create_clamps_negative_chunk_blank_to_zero() -> None:
         repeats=1,
         sub_sequences=[
             GenSampledSubSequence(
-                real=np.array([0.1, 0.2]),
-                imag=np.array([0.0, 0.0]),
+                real=np.full(65, 0.1),
+                imag=np.zeros(65),
                 repeats=1,
                 post_blank=0,
             )
         ],
     )
 
-    wseq = WaveSequenceTools.create(
+    with pytest.raises(
+        ValueError, match="interval_words must be greater than or equal"
+    ):
+        WaveSequenceTools.create(
+            sequence=sequence,
+            wait_words=0,
+            repeats=1,
+            interval_samples=WaveSequence.NUM_SAMPLES_IN_WAVE_BLOCK,
+        )
+
+
+def test_wave_create_normalizes_interval_words_to_minimum_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given zero interval samples, when creating WaveSequence, then interval words are normalized to one block."""
+    sequence = GenSampledSequence(
+        target_name="RQ00",
+        prev_blank=0,
+        post_blank=0,
+        repeats=1,
+        sub_sequences=[
+            GenSampledSubSequence(
+                real=np.array([0.1]),
+                imag=np.array([0.0]),
+                repeats=1,
+                post_blank=0,
+            )
+        ],
+    )
+    expected = object()
+    captured_interval_words: dict[str, int] = {}
+
+    def fake_create_single_chunked_wave_sequence(
+        cls: type[WaveSequenceTools],
+        sequence: GenSampledSequence,
+        wait_words: int,
+        repeats: int,
+        interval_words: int,
+    ) -> object:
+        captured_interval_words["value"] = interval_words
+        return expected
+
+    monkeypatch.setattr(
+        WaveSequenceTools,
+        "create_single_chunked_wave_sequence",
+        classmethod(fake_create_single_chunked_wave_sequence),
+    )
+
+    actual = WaveSequenceTools.create(
         sequence=sequence,
         wait_words=0,
         repeats=1,
         interval_samples=0,
     )
 
-    assert wseq.chunk(0).num_blank_words == 0
+    assert actual is expected
+    assert captured_interval_words["value"] == (
+        WaveSequence.NUM_SAMPLES_IN_WAVE_BLOCK // WaveSequence.NUM_SAMPLES_IN_AWG_WORD
+    )
+
+
+@pytest.mark.parametrize("wait_words", [-1, 16])
+def test_wave_create_rejects_wait_words_outside_single_block(wait_words: int) -> None:
+    """Given invalid wait words, when creating WaveSequence, then ValueError is raised."""
+    sequence = GenSampledSequence(
+        target_name="RQ00",
+        prev_blank=0,
+        post_blank=0,
+        repeats=1,
+        sub_sequences=[
+            GenSampledSubSequence(
+                real=np.array([0.1]),
+                imag=np.array([0.0]),
+                repeats=1,
+                post_blank=0,
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="wait_words must satisfy"):
+        WaveSequenceTools.create(
+            sequence=sequence,
+            wait_words=wait_words,
+            repeats=1,
+            interval_samples=WaveSequence.NUM_SAMPLES_IN_WAVE_BLOCK,
+        )

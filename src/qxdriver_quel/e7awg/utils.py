@@ -53,16 +53,28 @@ class WaveSequenceTools:
         -------
         WaveSequence
             Converted one-chunk wave sequence compatible with legacy e7 APIs.
+
+        Raises
+        ------
+        ValueError
+            Raised when `wait_words` is not in one-block range
+            (`0 <= wait_words < 16`).
         """
         # The AWG interface uses "words" as its time unit, so convert from samples.
         unit = WaveSequence.NUM_SAMPLES_IN_AWG_WORD
+        words_per_block = WaveSequence.NUM_SAMPLES_IN_WAVE_BLOCK // unit
+        if wait_words < 0 or wait_words >= words_per_block:
+            raise ValueError(
+                "wait_words must satisfy 0 <= wait_words < words_per_block "
+                f"(wait_words={wait_words}, words_per_block={words_per_block})"
+            )
         return cls.create_single_chunked_wave_sequence(
             sequence=sequence,
             wait_words=wait_words,
             repeats=repeats,
-            # NOTE: Int truncates toward shorter intervals when not word-aligned.
-            # Effective interval can shrink by up to (unit - 1) samples.
-            interval_words=int(interval_samples / unit),
+            # Keep compatibility with legacy timing behavior:
+            # interval words are floored but never reduced below one wave block.
+            interval_words=max(words_per_block, int(interval_samples // unit)),
         )
 
     @classmethod
@@ -101,6 +113,8 @@ class WaveSequenceTools:
         ------
         ValueError
             Raised when any IQ sample magnitude exceeds 1.
+        ValueError
+            Raised when `interval_words` is shorter than waveform duration.
         """
         # Flatten once to get the total sample count including all blanks.
         chain = _convert_gen_sampled_sequence_to_blanks_and_waves_chain(sequence)
@@ -147,14 +161,15 @@ class WaveSequenceTools:
         # `convert_to_iq_format` pads to wave-block boundaries (64 samples), and one
         # AWG word is 4 samples, so this division is exact (no ceil/floor ambiguity).
         total_duration_in_words = len(s) // WaveSequence.NUM_SAMPLES_IN_AWG_WORD
+        if interval_words < total_duration_in_words:
+            raise ValueError(
+                "interval_words must be greater than or equal to waveform duration "
+                f"(interval_words={interval_words}, "
+                f"waveform_duration_words={total_duration_in_words})"
+            )
         wseq.add_chunk(
             iq_samples=s,
-            # NOTE: If `interval_words` came from floor conversion, this blank
-            # is computed against the shortened interval definition.
-            # Treat interval as a lower bound for total chunk length.
-            # If waveform packing exceeds the requested interval, clamp the
-            # trailing blank to zero to keep chunk metadata valid.
-            num_blank_words=max(0, interval_words - total_duration_in_words),
+            num_blank_words=interval_words - total_duration_in_words,
             num_repeats=1,
         )
         return wseq
