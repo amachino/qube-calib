@@ -1,4 +1,4 @@
-# qxdriver-quel
+# qxdriver-quel1
 
 This package enables quelware 0.10.x support while preserving API compatibility with qubecalib 3.1 (quelware 0.8.x) for `qubex` integration.
 

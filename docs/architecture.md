@@ -109,7 +109,7 @@ src/qxdriver_quel/
 Run from workspace root:
 
 ```bash
-uv run ruff check src tests packages/qxdriver-quel/src packages/qxdriver-quel/tests
+uv run ruff check src tests packages/qxdriver-quel1/src packages/qxdriver-quel1/tests
 uv run pyright
-uv run pytest -q packages/qxdriver-quel/tests
+uv run pytest -q packages/qxdriver-quel1/tests
 ```
