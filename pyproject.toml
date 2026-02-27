@@ -10,7 +10,8 @@ authors = [{ name = "h403", email = "shiomi@ieee.org" }]
 maintainers = [{ name = "Akinori Machino" }]
 description = "QuEL driver package with qubecalib compatibility"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 dependencies = [
     "numpy >= 1.0",
     "plotly >= 5.0",
