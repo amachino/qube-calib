@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from qxdriver_quel.e7awg.compat import WaveSequence
-from qxdriver_quel.e7awg.utils import (
+from qxdriver_quel1.e7awg.compat import WaveSequence
+from qxdriver_quel1.e7awg.utils import (
     CaptureParamTools,
     WaveSequenceTools,
     _convert_cap_sampled_sequence_to_blanks_and_durations_chain,
     _convert_gen_sampled_sequence_to_blanks_and_waves_chain,
 )
-from qxdriver_quel.pulse import (
+from qxdriver_quel1.pulse import (
     CapSampledSequence,
     CapSampledSubSequence,
     CaptureSlots,

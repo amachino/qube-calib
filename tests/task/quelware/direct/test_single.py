@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from qxdriver_quel.e7awg.compat import CaptureParam, DspUnit, WaveSequence
+from qxdriver_quel1.e7awg.compat import CaptureParam, DspUnit, WaveSequence
 
 PERIOD = 1280 * 128
 

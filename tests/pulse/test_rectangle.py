@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from qxdriver_quel.pulse import Rectangle, Waveform
+from qxdriver_quel1.pulse import Rectangle, Waveform
 
 
 def test_inheritance() -> None:

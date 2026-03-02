@@ -2,8 +2,8 @@
 
 import numpy as np
 import pytest
-from qxdriver_quel import pulse
-from qxdriver_quel.pulse import (
+from qxdriver_quel1 import pulse
+from qxdriver_quel1.pulse import (
     Blank,
     CapSampledSequence,
     Capture,

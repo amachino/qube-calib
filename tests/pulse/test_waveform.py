@@ -1,7 +1,7 @@
 # ruff: noqa
 
 import numpy as np
-from qxdriver_quel.pulse import Slot, Waveform
+from qxdriver_quel1.pulse import Slot, Waveform
 
 
 def test_inheritance() -> None:

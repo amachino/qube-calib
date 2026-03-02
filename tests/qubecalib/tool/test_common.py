@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from qxdriver_quel.sysconf import SystemConfigDatabase
-from qxdriver_quel.tool.common import (
+from qxdriver_quel1.sysconf import SystemConfigDatabase
+from qxdriver_quel1.tool.common import (
     create_sysdb_items_qube_riken_a,
     create_sysdb_items_quel1_riken8,
     define_port_and_channel,

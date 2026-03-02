@@ -1,6 +1,6 @@
 # ruff: noqa
 
-from qxdriver_quel.pulse import Item, Slot
+from qxdriver_quel1.pulse import Item, Slot
 
 
 def test_inheritance() -> None:

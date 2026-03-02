@@ -11,9 +11,9 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
-from qxdriver_quel.pulse import GenSampledSequence, GenSampledSubSequence
-from qxdriver_quel.runtime.converter import Converter
-from qxdriver_quel.sysconf import BoxSetting, PortSetting
+from qxdriver_quel1.pulse import GenSampledSequence, GenSampledSubSequence
+from qxdriver_quel1.runtime.converter import Converter
+from qxdriver_quel1.sysconf import BoxSetting, PortSetting
 from quel_ic_config import QUEL1_BOXTYPE_ALIAS
 
 
@@ -105,7 +105,7 @@ def test_calc_modulation_frequency_logs_debug_for_direct_conversion_over_nyquist
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        with caplog.at_level(logging.DEBUG, logger="qxdriver_quel.runtime.converter"):
+        with caplog.at_level(logging.DEBUG, logger="qxdriver_quel1.runtime.converter"):
             freq = Converter.calc_modulation_frequency(
                 f_target=5.3,
                 port_config=cast(Any, port_config),
@@ -136,7 +136,7 @@ def test_calc_modulation_frequency_logs_debug_for_mixer_output_over_nyquist(
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        with caplog.at_level(logging.DEBUG, logger="qxdriver_quel.runtime.converter"):
+        with caplog.at_level(logging.DEBUG, logger="qxdriver_quel1.runtime.converter"):
             freq = Converter.calc_modulation_frequency(
                 f_target=11.3,
                 port_config=cast(Any, port_config),

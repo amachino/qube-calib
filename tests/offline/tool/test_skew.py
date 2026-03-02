@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from qxdriver_quel.qubecalib import SystemConfigDatabase
+from qxdriver_quel1.qubecalib import SystemConfigDatabase
 
 # def test_create_database() -> None:
 #     """create_database should create a database."""

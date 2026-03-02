@@ -1,34 +1,34 @@
-# qxdriver_quel Architecture
+# qxdriver_quel1 Architecture
 
-This document describes the current `qxdriver_quel` architecture and the
+This document describes the current `qxdriver_quel1` architecture and the
 compatibility contract used by `qubex`.
 
 ## Scope And Goals
 
-- Keep the `qubex -> qxdriver_quel.compat` contract stable.
+- Keep the `qubex -> qxdriver_quel1.compat` contract stable.
 - Keep runtime internals (`runtime/*`, `driver/*`, `sysconf/*`) refactorable.
 - Isolate hardware access from conversion logic to keep offline tests practical.
 
 ## Contract Boundary
 
-The only supported integration surface for `qubex` is `qxdriver_quel.compat`.
+The only supported integration surface for `qubex` is `qxdriver_quel1.compat`.
 
 - Required symbol names are defined by
   `src/qubex/backend/quel1/quel1_driver_loader.py` (`_SYMBOL_IMPORT_PATHS`).
 - Symbol availability/alignment is checked by
-  `src/qxdriver_quel/compat/qubex_contract.py`.
+  `src/qxdriver_quel1/compat/qubex_contract.py`.
 - Exported symbols are expected to satisfy protocols in
   `src/qubex/backend/quel1/quel1_qubealib_protocols.py`.
 
 Policy:
 
-- Keep compatibility only at `qxdriver_quel.compat`.
+- Keep compatibility only at `qxdriver_quel1.compat`.
 - Do not add compatibility aliases for historical internal module paths.
 
 ## Current Layout
 
 ```text
-src/qxdriver_quel/
+src/qxdriver_quel1/
   compat/
     __init__.py
     exports.py
@@ -93,7 +93,7 @@ src/qxdriver_quel/
   port only on the boxpool path.
 - `qubex` may override sequencer methods to force the boxpool path for specific
   backward-compatibility behavior (for example, legacy R8 readout handling).
-  This is an integration policy on `qubex` side, not a `qxdriver_quel.compat`
+  This is an integration policy on `qubex` side, not a `qxdriver_quel1.compat`
   contract change.
 
 ## Maintenance Rules

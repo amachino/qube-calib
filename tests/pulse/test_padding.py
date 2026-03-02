@@ -1,7 +1,7 @@
 # ruff: noqa
 
 import numpy as np
-from qxdriver_quel.pulse import Flushleft, Rectangle, Sequence, padding
+from qxdriver_quel1.pulse import Flushleft, Rectangle, Sequence, padding
 
 
 def test_padding() -> None:

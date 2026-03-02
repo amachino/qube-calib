@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from qxdriver_quel.pulse import Frequency, Magnifier, Rectangle, Sequence, VirtualZ
+from qxdriver_quel1.pulse import Frequency, Magnifier, Rectangle, Sequence, VirtualZ
 
 
 def test_magnifier() -> None:

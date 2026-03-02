@@ -1,9 +1,9 @@
 # ruff: noqa
 
 import pytest
-from qxdriver_quel.e7awg.compat import CaptureParam, WaveSequence
-from qxdriver_quel.driver import multi, single
-from qxdriver_quel.clockmaster.compat import QuBEMasterClient
+from qxdriver_quel1.e7awg.compat import CaptureParam, WaveSequence
+from qxdriver_quel1.driver import multi, single
+from qxdriver_quel1.clockmaster.compat import QuBEMasterClient
 from quel_ic_config import Quel1Box, Quel1BoxType
 
 MASTER_IPADDR = "10.3.0.255"

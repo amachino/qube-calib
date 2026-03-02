@@ -24,7 +24,7 @@ dependencies = [
 dev = ["pyright", "pytest", "ruff"]
 
 [tool.setuptools.dynamic]
-version = { attr = "qxdriver_quel.__version__" }
+version = { attr = "qxdriver_quel1.__version__" }
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"

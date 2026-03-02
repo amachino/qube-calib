@@ -2,7 +2,7 @@
 
 """Runtime package export tests."""
 
-from qxdriver_quel.runtime import (
+from qxdriver_quel1.runtime import (
     DEFAULT_SIDEBAND,
     BoxPool,
     Converter,
@@ -11,21 +11,21 @@ from qxdriver_quel.runtime import (
     Sequencer,
     Sideband,
 )
-from qxdriver_quel.runtime.box_pool import BoxPool as RuntimeBoxPool
-from qxdriver_quel.runtime.converter import (
+from qxdriver_quel1.runtime.box_pool import BoxPool as RuntimeBoxPool
+from qxdriver_quel1.runtime.converter import (
     DEFAULT_SIDEBAND as RuntimeDefaultSideband,
 )
-from qxdriver_quel.runtime.converter import (
+from qxdriver_quel1.runtime.converter import (
     Converter as RuntimeConverter,
 )
-from qxdriver_quel.runtime.converter import (
+from qxdriver_quel1.runtime.converter import (
     Direction as RuntimeDirection,
 )
-from qxdriver_quel.runtime.converter import (
+from qxdriver_quel1.runtime.converter import (
     Sideband as RuntimeSideband,
 )
-from qxdriver_quel.runtime.executor import Executor as RuntimeExecutor
-from qxdriver_quel.runtime.sequencer_core import Sequencer as RuntimeSequencer
+from qxdriver_quel1.runtime.executor import Executor as RuntimeExecutor
+from qxdriver_quel1.runtime.sequencer_core import Sequencer as RuntimeSequencer
 
 
 def test_runtime_package_reexports_expected_symbols() -> None:

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import numpy as np
-from qxdriver_quel.e7awg.compat import CaptureParam, DspUnit, WaveSequence
-from qxdriver_quel.driver.compat import (
+from qxdriver_quel1.e7awg.compat import CaptureParam, DspUnit, WaveSequence
+from qxdriver_quel1.driver.compat import (
     convert_captureparam,
     convert_wavesequence,
 )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from qxdriver_quel.e7awg.compat import WaveSequence
+from qxdriver_quel1.e7awg.compat import WaveSequence
 
 
 def test_add_chunk_accepts_positional_iq_samples() -> None:

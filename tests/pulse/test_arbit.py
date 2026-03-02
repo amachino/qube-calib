@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from qxdriver_quel.pulse import DEFAULT_SAMPLING_PERIOD, Arbit, Waveform
+from qxdriver_quel1.pulse import DEFAULT_SAMPLING_PERIOD, Arbit, Waveform
 
 
 def test_inheritance() -> None:

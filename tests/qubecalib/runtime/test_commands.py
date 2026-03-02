@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 import pytest
-from qxdriver_quel.runtime.commands import PortConfigAcquirer
+from qxdriver_quel1.runtime.commands import PortConfigAcquirer
 
 
 class _FakeBox:
