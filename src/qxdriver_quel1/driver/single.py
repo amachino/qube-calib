@@ -230,11 +230,17 @@ class Action:
                 for port, runits_ in runits_by_ports.items()
                 for runit in runits_
             }
-            cap_task, gen_task = self._box.start_capture_by_awg_trigger(
-                runits=runits,
-                channels=channel_specs,
-                timecounter=timecounter,
-            )
+            if timecounter is None:
+                cap_task, gen_task = self._box.start_capture_by_awg_trigger(
+                    runits=runits,
+                    channels=channel_specs,
+                )
+            else:
+                cap_task, gen_task = self._box.start_capture_by_awg_trigger(
+                    runits=runits,
+                    channels=channel_specs,
+                    timecounter=timecounter,
+                )
             return {_TRIGGERED_CAPTURE_KEY: (cap_task, gen_task)}
 
         return {
