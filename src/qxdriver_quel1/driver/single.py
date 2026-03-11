@@ -194,17 +194,38 @@ class Action:
         Start capture tasks according to capture/trigger settings.
 
         For plain capture this starts CAP units immediately. For triggered
-        capture on quelware 0.10 and later, `start_capture_by_awg_trigger`
-        also starts the trigger-side AWG. The optional `timecounter` is used
-        by multi-box execution to delay that start until the shared emission
-        schedule so the behavior stays aligned with the old 0.8/qubecalib
-        path, where all boxes were effectively armed first and emitted
-        together later.
+        capture on quelware 0.10 and later, this method delegates to
+        `start_capture_by_awg_trigger`, which arms the configured capture
+        runits and also takes responsibility for starting the trigger-side
+        AWG. In other words, the AWG edge that triggers capture is scheduled
+        from this method, not from `start_emission()`.
+
+        The optional `timecounter` is mainly used by multi-box execution. A
+        value of `None` means "start now", while an integer schedules the
+        trigger-side AWG at that shared counter value after capture has been
+        armed. This preserves the effective old 0.8/qubecalib ordering where
+        triggered boxes were armed first and all emission happened together
+        later.
+
+        Parameters
+        ----------
+        timecounter : int | None, optional
+            Absolute hardware time counter for the trigger-side AWG start.
+            When omitted, immediate start is requested. When provided, it is
+            forwarded to `start_capture_by_awg_trigger(...)` so capture is
+            armed now and the AWG starts at the scheduled counter.
 
         Returns
         -------
         dict[CaptureFutureKey, Any]
             Future map keyed by capture port or a trigger sentinel key.
+
+        Notes
+        -----
+        In the triggered path this method returns one combined future entry
+        that contains both the capture task and the AWG task. Callers should
+        not invoke `start_wavegen()` for the same triggered action afterward,
+        because the trigger-side AWG has already been started or reserved here.
         """
         channels = set(self._wseqs)
         runits_by_ports: dict[Quel1PortType, list[int]] = defaultdict(list)

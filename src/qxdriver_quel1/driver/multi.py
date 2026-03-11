@@ -609,16 +609,26 @@ class Action:
 
         The compatibility point is the order of operations:
         1. compute one shared scheduled time for every box,
-        2. arm triggered capture with that scheduled time, and
-        3. reserve non-triggered emission at the same scheduled time.
+        2. call `capture_start(timecounter=...)` on triggered boxes so capture
+           is armed and the trigger-side AWG is scheduled at that time, and
+        3. reserve `start_wavegen(..., timecounter=...)` only for non-triggered
+           boxes at the same scheduled time.
 
         This keeps qxdriver on quelware 0.10+ aligned with the effective
-        multi-box timing of the old 0.8/qubecalib stack.
+        multi-box timing of the old 0.8/qubecalib stack, where triggered boxes
+        were armed first and all boxes emitted together later.
 
         Returns
         -------
         tuple[dict[tuple[str, Quel1PortType], CaptureReturnCode], dict[tuple[str, Quel1PortType, int], NDArray[np.complex64]]]
             Flattened status and IQ maps with box names.
+
+        Notes
+        -----
+        Triggered boxes do not go through a second explicit `start_wavegen()`
+        call in this flow. Their trigger-side AWGs are already handled by
+        `single.Action.capture_start(...)`, while `emit_at()` only reserves
+        emission for boxes that have AWG settings without trigger settings.
         """
         scheduled_times = self._build_scheduled_times(
             displacement=self._quel1system.displacement
