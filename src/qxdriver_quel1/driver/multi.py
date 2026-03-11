@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime
-from collections.abc import MutableSequence
+from collections.abc import Mapping, MutableSequence
 from logging import getLogger
 from types import MappingProxyType
 from typing import Any, Final, NamedTuple, cast
@@ -414,7 +414,18 @@ class Quel1SystemCache:
 
 
 class Action:
-    """Executable multi-box direct action with synchronized emission."""
+    """
+    Executable multi-box direct action with synchronized emission.
+
+    This class absorbs the timing difference between the old quelware
+    0.8/qubecalib path and the quelware 0.10+ direct-driver path.
+    In the old path, triggered boxes were armed first and all boxes were then
+    reserved onto the same emission time. In the 0.10+ path,
+    `single.Action.capture_start()` can start the trigger-side AWG as part of
+    `start_capture_by_awg_trigger`, so multi-box execution must compute one
+    shared schedule up front and pass that schedule into triggered capture
+    start as well as non-triggered `start_wavegen` reservations.
+    """
 
     SYSREF_PERIOD: Final[int] = 2_000
     TIMING_OFFSET: Final[int] = 0
@@ -535,10 +546,21 @@ class Action:
 
     def capture_start(
         self,
+        *,
+        scheduled_times: Mapping[str, int] | None = None,
     ) -> dict[str, dict[single.CaptureFutureKey, Any]]:
         """Start capture on boxes that have capture settings."""
+
+        def _capture_future_map(
+            name: str,
+            action: single.Action,
+        ) -> dict[single.CaptureFutureKey, Any]:
+            if scheduled_times is not None and action.trigger_settings:
+                return action.capture_start(timecounter=scheduled_times[name])
+            return action.capture_start()
+
         return {
-            name: action.capture_start()
+            name: _capture_future_map(name, action)
             for name, action in self._actions.items()
             if self.has_capture_setting(action)
         }
@@ -585,30 +607,36 @@ class Action:
         """
         Execute synchronized action and return capture results.
 
+        The compatibility point is the order of operations:
+        1. compute one shared scheduled time for every box,
+        2. arm triggered capture with that scheduled time, and
+        3. reserve non-triggered emission at the same scheduled time.
+
+        This keeps qxdriver on quelware 0.10+ aligned with the effective
+        multi-box timing of the old 0.8/qubecalib stack.
+
         Returns
         -------
         tuple[dict[tuple[str, Quel1PortType], CaptureReturnCode], dict[tuple[str, Quel1PortType, int], NDArray[np.complex64]]]
             Flattened status and IQ maps with box names.
         """
-        futures = self.capture_start()
-        self.emit_at(displacement=self._quel1system.displacement)
+        scheduled_times = self._build_scheduled_times(
+            displacement=self._quel1system.displacement
+        )
+        futures = self.capture_start(scheduled_times=scheduled_times)
+        self.emit_at(
+            displacement=self._quel1system.displacement,
+            scheduled_times=scheduled_times,
+        )
         return self.capture_stop(futures)
 
-    def emit_at(
+    def _build_scheduled_times(
         self,
+        *,
         min_time_offset: int = MIN_TIME_OFFSET,
         displacement: int = 0,
-    ) -> None:
-        """
-        Reserve synchronized emission time and start wave generation.
-
-        Parameters
-        ----------
-        min_time_offset : int, optional
-            Offset from current counter before emission reservation.
-        displacement : int, optional
-            Additional displacement applied to all boxes.
-        """
+    ) -> dict[str, int]:
+        """Compute synchronized emission times for all boxes."""
         for name, action in self._actions.items():
             box = action.box
             last_sysref_time = box.get_latest_sysref_timecounter()
@@ -637,22 +665,59 @@ class Action:
                 fluctuation,
             )
 
-        awgs = {
-            name: {(spec.port, spec.channel) for spec in action.wave_sequences}
-            for name, action in self._actions.items()
-        }
-
         base_time = current_time + min_time_offset
         align_offset = (16 - (base_time - self._ref_sysref_time_offset) % 16) % 16
         base_time += align_offset + displacement + self.TIMING_OFFSET
 
         timediff = self._estimated_timediff
         timing_shift = self._quel1system.timing_shift
+        return {
+            name: base_time + timediff[name] + timing_shift[name]
+            for name in self._actions
+        }
+
+    def emit_at(
+        self,
+        min_time_offset: int = MIN_TIME_OFFSET,
+        displacement: int = 0,
+        *,
+        scheduled_times: Mapping[str, int] | None = None,
+    ) -> None:
+        """
+        Reserve synchronized emission time and start wave generation.
+
+        Parameters
+        ----------
+        min_time_offset : int, optional
+            Offset from current counter before emission reservation.
+        displacement : int, optional
+            Additional displacement applied to all boxes.
+
+        Notes
+        -----
+        Triggered boxes are intentionally skipped here. On quelware 0.10+ they
+        are already armed by `capture_start(timecounter=...)`, which delegates
+        to `start_capture_by_awg_trigger(...)` and lets the hardware start that
+        AWG at the shared scheduled time. Only non-triggered boxes still need
+        an explicit `start_wavegen(..., timecounter=...)` reservation here.
+        """
+        awgs = {
+            name: {(spec.port, spec.channel) for spec in action.wave_sequences}
+            for name, action in self._actions.items()
+        }
+        resolved_scheduled_times = (
+            dict(scheduled_times)
+            if scheduled_times is not None
+            else self._build_scheduled_times(
+                min_time_offset=min_time_offset,
+                displacement=displacement,
+            )
+        )
         tasks = []
         for name, action in self._actions.items():
             if action.trigger_settings or not action.wave_sequences:
                 continue
-            scheduled_time = base_time + timediff[name] + timing_shift[name]
+            scheduled_time = resolved_scheduled_times[name]
             tasks.append(
                 action.box.start_wavegen(awgs[name], timecounter=scheduled_time)
             )
@@ -660,9 +725,11 @@ class Action:
                 "reserving emission of %s at %s : base_time=%s, timediff=%s, timing_shift=%s",
                 name,
                 scheduled_time,
-                base_time,
-                timediff[name],
-                timing_shift[name],
+                scheduled_time
+                - self._estimated_timediff[name]
+                - self._quel1system.timing_shift[name],
+                self._estimated_timediff[name],
+                self._quel1system.timing_shift[name],
             )
         for task in tasks:
             task.result()

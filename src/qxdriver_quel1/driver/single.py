@@ -185,9 +185,21 @@ class Action:
                 capture_param=convert_captureparam(cprm),
             )
 
-    def capture_start(self) -> dict[CaptureFutureKey, Any]:
+    def capture_start(
+        self,
+        *,
+        timecounter: int | None = None,
+    ) -> dict[CaptureFutureKey, Any]:
         """
         Start capture tasks according to capture/trigger settings.
+
+        For plain capture this starts CAP units immediately. For triggered
+        capture on quelware 0.10 and later, `start_capture_by_awg_trigger`
+        also starts the trigger-side AWG. The optional `timecounter` is used
+        by multi-box execution to delay that start until the shared emission
+        schedule so the behavior stays aligned with the old 0.8/qubecalib
+        path, where all boxes were effectively armed first and emitted
+        together later.
 
         Returns
         -------
@@ -221,6 +233,7 @@ class Action:
             cap_task, gen_task = self._box.start_capture_by_awg_trigger(
                 runits=runits,
                 channels=channel_specs,
+                timecounter=timecounter,
             )
             return {_TRIGGERED_CAPTURE_KEY: (cap_task, gen_task)}
 
