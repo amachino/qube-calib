@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qxdriver-quel1"
-dynamic = ["version"]
+version = "1.5.0b4"
 requires-python = ">=3.10"
 authors = [{ name = "h403", email = "shiomi@ieee.org" }]
 maintainers = [{ name = "Akinori Machino" }]
@@ -22,9 +22,6 @@ dependencies = [
 
 [dependency-groups]
 dev = ["pyright", "pytest", "ruff"]
-
-[tool.setuptools.dynamic]
-version = { attr = "qxdriver_quel1.__version__" }
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"

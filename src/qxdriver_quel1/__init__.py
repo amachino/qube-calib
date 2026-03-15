@@ -5,9 +5,13 @@
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
 from typing import TYPE_CHECKING
 
-__version__ = "0.0.0.dev0"
+try:
+    __version__ = importlib.metadata.version("qxdriver-quel1")
+except importlib.metadata.PackageNotFoundError:
+    __version__ = "0.0.0"
 
 if TYPE_CHECKING:
     import qxdriver_quel1.pulse as pulse
