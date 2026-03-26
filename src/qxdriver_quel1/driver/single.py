@@ -11,9 +11,9 @@ import numpy.typing as npt
 from quel_ic_config import Quel1Box
 from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
 
-from qxdriver_quel1.e7awg.compat import CaptureParam, WaveSequence
+from qxdriver_quel1.e7awg.compat import CaptureParam, DspUnit, WaveSequence
 
-from .compat import convert_captureparam, convert_wavesequence, reader_to_flat_wave
+from .compat import convert_captureparam, convert_wavesequence, reader_to_capture_data
 
 Quel1PortType: TypeAlias = int | tuple[int, int]
 _TriggeredCaptureKey: TypeAlias = Literal["__triggered__"]
@@ -283,7 +283,7 @@ class Action:
         futures: dict[CaptureFutureKey, Any],
     ) -> tuple[
         dict[Quel1PortType, CaptureReturnCode],
-        dict[tuple[Quel1PortType, int], npt.NDArray[np.complex64]],
+        dict[tuple[Quel1PortType, int], Any],
     ]:
         """
         Resolve capture futures and return status/data maps.
@@ -295,11 +295,11 @@ class Action:
 
         Returns
         -------
-        tuple[dict[Quel1PortType, CaptureReturnCode], dict[tuple[Quel1PortType, int], NDArray[np.complex64]]]
-            Flattened status and IQ data maps.
+        tuple[dict[Quel1PortType, CaptureReturnCode], dict[tuple[Quel1PortType, int], Any]]
+            Flattened status and capture data maps.
         """
         status: dict[Quel1PortType, CaptureReturnCode] = {}
-        data: dict[tuple[Quel1PortType, int], npt.NDArray[np.complex64]] = {}
+        data: dict[tuple[Quel1PortType, int], Any] = {}
 
         triggered_futures = futures.get(_TRIGGERED_CAPTURE_KEY)
         if triggered_futures is not None:
@@ -308,7 +308,14 @@ class Action:
             gen_task.result()
             for (port, runit), reader in readers.items():
                 status[port] = CaptureReturnCode.SUCCESS
-                data[(port, runit)] = reader_to_flat_wave(reader)
+                classification_enabled = (
+                    DspUnit.CLASSIFICATION
+                    in self._cprms[RunitId(port=port, runit=runit)].dsp_units_enabled
+                )
+                data[(port, runit)] = reader_to_capture_data(
+                    reader,
+                    classification_enabled=classification_enabled,
+                )
             return status, data
 
         for port, future in futures.items():
@@ -317,22 +324,29 @@ class Action:
             readers = future.result()
             status[port] = CaptureReturnCode.SUCCESS
             for (_, runit), reader in readers.items():
-                data[(port, runit)] = reader_to_flat_wave(reader)
+                classification_enabled = (
+                    DspUnit.CLASSIFICATION
+                    in self._cprms[RunitId(port=port, runit=runit)].dsp_units_enabled
+                )
+                data[(port, runit)] = reader_to_capture_data(
+                    reader,
+                    classification_enabled=classification_enabled,
+                )
         return status, data
 
     def action(
         self,
     ) -> tuple[
         dict[Quel1PortType, CaptureReturnCode],
-        dict[tuple[Quel1PortType, int], npt.NDArray[np.complex64]],
+        dict[tuple[Quel1PortType, int], Any],
     ]:
         """
         Execute one action cycle and return capture results.
 
         Returns
         -------
-        tuple[dict[Quel1PortType, CaptureReturnCode], dict[tuple[Quel1PortType, int], NDArray[np.complex64]]]
-            Flattened status and IQ data maps.
+        tuple[dict[Quel1PortType, CaptureReturnCode], dict[tuple[Quel1PortType, int], Any]]
+            Flattened status and capture data maps.
         """
         if self._wseqs and self._cprms and self._triggers:
             futures = self.capture_start()

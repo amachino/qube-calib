@@ -78,6 +78,8 @@ class Converter:
         enable_classification: bool = False,
         line_param0: tuple[float, float, float] = (1, 0, 0),
         line_param1: tuple[float, float, float] = (0, 1, 0),
+        line_param0_by_target: dict[str, tuple[float, float, float]] | None = None,
+        line_param1_by_target: dict[str, tuple[float, float, float]] | None = None,
     ) -> dict[tuple[str, Quel1PortType, int], WaveSequence | CaptureParam]:
         """
         Convert sampled sequences into per-device generation/capture settings.
@@ -144,6 +146,8 @@ class Converter:
             enable_classification=enable_classification,
             line_param0=line_param0,
             line_param1=line_param1,
+            line_param0_by_target=line_param0_by_target,
+            line_param1_by_target=line_param1_by_target,
         )
         genseq = cls.convert_to_gen_device_specific_sequence(
             gen_sampled_sequence=gen_sampled_sequence,
@@ -181,6 +185,8 @@ class Converter:
         enable_classification: bool = False,
         line_param0: tuple[float, float, float] = (1, 0, 0),
         line_param1: tuple[float, float, float] = (0, 1, 0),
+        line_param0_by_target: dict[str, tuple[float, float, float]] | None = None,
+        line_param1_by_target: dict[str, tuple[float, float, float]] | None = None,
     ) -> dict[tuple[str, Quel1PortType, int], CaptureParam]:
         """
         Convert capture sampled sequences into per-runit `CaptureParam` objects.
@@ -302,9 +308,13 @@ class Converter:
                 id: CaptureParamTools.enable_sum(capprm=e7) for id, e7 in ids_e7.items()
             }
         if enable_classification:
+            line_param0_by_target = {} if line_param0_by_target is None else line_param0_by_target
+            line_param1_by_target = {} if line_param1_by_target is None else line_param1_by_target
             ids_e7 = {
                 id: CaptureParamTools.enable_classification(
-                    capprm=e7, line_param0=line_param0, line_param1=line_param1
+                    capprm=e7,
+                    line_param0=line_param0_by_target.get(ids_targets[id], line_param0),
+                    line_param1=line_param1_by_target.get(ids_targets[id], line_param1),
                 )
                 for id, e7 in ids_e7.items()
             }

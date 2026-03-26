@@ -204,6 +204,8 @@ class Sequencer(Command):
         enable_classification: bool = False,
         line_param0: tuple[float, float, float] = (1, 0, 0),
         line_param1: tuple[float, float, float] = (0, 1, 0),
+        line_param0_by_target: dict[str, tuple[float, float, float]] | None = None,
+        line_param1_by_target: dict[str, tuple[float, float, float]] | None = None,
     ) -> None:
         """Set measurement options applied during execution."""
         self.repeats = repeats
@@ -216,6 +218,8 @@ class Sequencer(Command):
         self.enable_classification = enable_classification
         self.line_param0 = line_param0
         self.line_param1 = line_param1
+        self.line_param0_by_target = line_param0_by_target
+        self.line_param1_by_target = line_param1_by_target
 
     def generate_cap_resource_map(self, boxpool: BoxPool) -> dict[str, Any]:
         """Build a target-to-capture-resource map."""
@@ -349,6 +353,8 @@ class Sequencer(Command):
                 enable_classification=self.enable_classification,
                 line_param0=self.line_param0,
                 line_param1=self.line_param1,
+                line_param0_by_target=self.line_param0_by_target,
+                line_param1_by_target=self.line_param1_by_target,
             )
         )
         # phase_offset_list_by_target = {
@@ -472,11 +478,13 @@ class Sequencer(Command):
     def parse_capture_result(
         self,
         status: CaptureReturnCode,
-        data: npt.NDArray[np.complex64],
+        data: Any,
         cprm: CaptureParam,
-    ) -> tuple[CaptureReturnCode, list[npt.NDArray[np.complex64]]]:
+    ) -> tuple[CaptureReturnCode, list[Any]]:
         # num_expected_words = cprm.calc_capture_samples()
         """Parse one capture payload according to capture parameters."""
+        if DspUnit.CLASSIFICATION in cprm.dsp_units_enabled:
+            return status, [np.asarray(section, dtype=np.uint8) for section in data]
         if DspUnit.INTEGRATION in cprm.dsp_units_enabled:
             data = data.reshape(1, -1)
         else:

@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
+from e7awghal.classification import ClassificationParam
 from quel_ic_config import AwgParam, CapIqDataReader, CapParam, CapSection, WaveChunk
 
 from qxdriver_quel1.e7awg.compat import CaptureParam, DspUnit, WaveSequence
@@ -46,6 +49,92 @@ def convert_wavesequence(
     return ConvertedAwgParam(awg_param=awg_param, wavedata=wavedata)
 
 
+def _normalize_line(
+    line: tuple[float, float, float],
+) -> tuple[float, float, float]:
+    """Return one normalized line representation with stable sign."""
+    a, b, c = (float(value) for value in line)
+    norm = math.hypot(a, b)
+    if norm == 0:
+        raise ValueError("Classification line coefficients must not both be zero.")
+    a, b, c = a / norm, b / norm, c / norm
+    if a < 0 or (np.isclose(a, 0.0) and b < 0):
+        a, b, c = -a, -b, -c
+    return (a, b, c)
+
+
+def _line_angle(line: tuple[float, float, float]) -> float:
+    """Return the line angle expected by `ClassificationParam`."""
+    a, b, _ = (float(value) for value in line)
+    if np.isclose(a, 0.0) and np.isclose(b, 0.0):
+        raise ValueError("Classification line coefficients must not both be zero.")
+    return float(np.degrees(np.arctan2(-a, b)))
+
+
+def _point_on_line(line: tuple[float, float, float]) -> tuple[float, float]:
+    """Return one point on the given line."""
+    a, b, c = (float(value) for value in line)
+    denom = a * a + b * b
+    if denom == 0:
+        raise ValueError("Classification line coefficients must not both be zero.")
+    return (-a * c / denom, -b * c / denom)
+
+
+def _lines_share_geometry(
+    line0: tuple[float, float, float],
+    line1: tuple[float, float, float],
+) -> bool:
+    """Return whether two line equations represent the same geometric line."""
+    return np.allclose(_normalize_line(line0), _normalize_line(line1))
+
+
+def _intersection_point(
+    line0: tuple[float, float, float],
+    line1: tuple[float, float, float],
+) -> tuple[float, float]:
+    """Return the intersection point of two non-parallel lines."""
+    a0, b0, c0 = (float(value) for value in line0)
+    a1, b1, c1 = (float(value) for value in line1)
+    det = a0 * b1 - a1 * b0
+    if np.isclose(det, 0.0):
+        raise ValueError("Classification lines are parallel and do not intersect.")
+    x, y = np.linalg.solve(
+        np.array([[a0, b0], [a1, b1]], dtype=np.float64),
+        np.array([-c0, -c1], dtype=np.float64),
+    )
+    return (float(x), float(y))
+
+
+def _convert_classification_param(cprm: CaptureParam) -> ClassificationParam:
+    """Convert legacy line parameters into a direct-driver classification param."""
+    try:
+        line0 = tuple(float(value) for value in cprm.classification_params[0])
+        line1 = tuple(float(value) for value in cprm.classification_params[1])
+    except KeyError as exc:
+        raise ValueError(
+            "Classification DSP requires both decision functions 0 and 1."
+        ) from exc
+
+    a0, b0, _ = line0
+    a1, b1, _ = line1
+    det = a0 * b1 - a1 * b0
+    if np.isclose(det, 0.0):
+        if not _lines_share_geometry(line0, line1):
+            raise ValueError(
+                "Parallel classification lines are not supported by direct-driver ClassificationParam conversion."
+            )
+        pivot_x, pivot_y = _point_on_line(line0)
+    else:
+        pivot_x, pivot_y = _intersection_point(line0, line1)
+
+    return ClassificationParam(
+        pivot_x=pivot_x,
+        pivot_y=pivot_y,
+        angle_main=_line_angle(line0),
+        angle_sub=_line_angle((-line1[0], -line1[1], -line1[2])),
+    )
+
+
 def convert_captureparam(cprm: CaptureParam) -> CapParam:
     """Convert e7awgsw.CaptureParam to e7awghal.CapParam."""
     cap_param = CapParam(
@@ -70,12 +159,11 @@ def convert_captureparam(cprm: CaptureParam) -> CapParam:
     cap_param.decimation_enable = DspUnit.DECIMATION in dsp_enabled
     cap_param.window_enable = DspUnit.COMPLEX_WINDOW in dsp_enabled
     cap_param.classification_enable = DspUnit.CLASSIFICATION in dsp_enabled
+    if cap_param.classification_enable:
+        cap_param.classification_param = _convert_classification_param(cprm)
 
     fir_coefs = getattr(cprm, "complex_fir_coefs", None)
     if fir_coefs:
-        # e7awgsw stores FIR coefficients as fixed-point-like integers, while
-        # quel_ic_config.CapParam expects normalized float coefficients.
-        # Convert by exponent offset and clamp to the accepted range [-2.0, 2.0).
         fir = np.asarray(fir_coefs, dtype=np.complex64)
         fir_scale = float(1 << cap_param.complexfir_exponent_offset)
         fir_lower = np.float32(-2.0)
@@ -88,9 +176,6 @@ def convert_captureparam(cprm: CaptureParam) -> CapParam:
         )
     window_coefs = getattr(cprm, "complex_window_coefs", None)
     if window_coefs:
-        # e7awgsw window coefficients are also integer-scaled values.
-        # CapParam validates normalized coefficients in [-2.0, 2.0), so rescale
-        # by 2^30 and clamp for backend compatibility.
         window = np.asarray(window_coefs, dtype=np.complex128)
         window_scale = float(1 << 30)
         window_lower = np.float64(-2.0)
@@ -106,6 +191,17 @@ def convert_captureparam(cprm: CaptureParam) -> CapParam:
             dtype=np.complex128,
         )
     return cap_param
+
+
+def reader_to_capture_data(
+    reader: CapIqDataReader,
+    *,
+    classification_enabled: bool,
+) -> Any:
+    """Return wave or classified capture payload from one reader."""
+    if classification_enabled:
+        return reader.as_class_list()
+    return reader.rawwave()
 
 
 def reader_to_flat_wave(reader: CapIqDataReader) -> npt.NDArray[np.complex64]:

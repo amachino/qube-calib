@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from qxdriver_quel1.e7awg.compat import CaptureParam, DspUnit, WaveSequence
 from qxdriver_quel1.driver.compat import (
     convert_captureparam,
     convert_wavesequence,
+    reader_to_capture_data,
 )
 
 
@@ -73,3 +75,45 @@ def test_convert_captureparam_scales_window_coefficients() -> None:
     assert np.all(np.real(converted.window_coeff) < 2.0)
     assert np.all(np.imag(converted.window_coeff) >= -2.0)
     assert np.all(np.imag(converted.window_coeff) < 2.0)
+
+
+def test_convert_captureparam_maps_identical_classification_lines() -> None:
+    """Given identical decision lines, conversion should emit a direct-driver classification param."""
+    cprm = CaptureParam()
+    cprm.add_sum_section(12, num_post_blank_words=4)
+    cprm.sel_dsp_units_to_enable(DspUnit.CLASSIFICATION)
+    cprm.set_decision_func_params(
+        func_sel=0,
+        coef_a=np.float32(1.0),
+        coef_b=np.float32(0.0),
+        const_c=np.float32(-2.0),
+    )
+    cprm.set_decision_func_params(
+        func_sel=1,
+        coef_a=np.float32(1.0),
+        coef_b=np.float32(0.0),
+        const_c=np.float32(-2.0),
+    )
+
+    converted = convert_captureparam(cprm)
+
+    assert converted.classification_enable is True
+    assert converted.classification_param.pivot_x == pytest.approx(2.0)
+    assert converted.classification_param.pivot_y == pytest.approx(0.0)
+    assert converted.classification_param.angle_main == pytest.approx(-90.0)
+    assert converted.classification_param.angle_sub == pytest.approx(90.0)
+
+
+def test_reader_to_capture_data_uses_class_list_for_classification() -> None:
+    """Given classification capture mode, reader conversion should return class-list payloads."""
+    class _Reader:
+        def as_class_list(self) -> list[np.ndarray]:
+            return [np.array([0, 3], dtype=np.uint8)]
+
+        def rawwave(self) -> np.ndarray:
+            raise AssertionError
+
+    payload = reader_to_capture_data(_Reader(), classification_enabled=True)
+
+    assert len(payload) == 1
+    assert np.array_equal(payload[0], np.array([0, 3], dtype=np.uint8))
