@@ -304,7 +304,20 @@ class Action:
         triggered_futures = futures.get(_TRIGGERED_CAPTURE_KEY)
         if triggered_futures is not None:
             cap_task, gen_task = cast(tuple[Any, Any], triggered_futures)
-            gen_task.result()
+            try:
+                gen_task.result()
+            except RuntimeError as error:
+                if "too late to schedule" in str(error):
+                    cancel = getattr(cap_task, "cancel", None)
+                    if callable(cancel):
+                        try:
+                            cancel(timeout=0.05, polling_period=0.005)
+                        except TypeError:
+                            try:
+                                cancel(0.05)
+                            except TypeError:
+                                cancel()
+                raise
             readers = cap_task.result()
             for (port, runit), reader in readers.items():
                 status[port] = CaptureReturnCode.SUCCESS
