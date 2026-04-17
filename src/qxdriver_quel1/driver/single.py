@@ -304,8 +304,8 @@ class Action:
         triggered_futures = futures.get(_TRIGGERED_CAPTURE_KEY)
         if triggered_futures is not None:
             cap_task, gen_task = cast(tuple[Any, Any], triggered_futures)
-            readers = cap_task.result()
             gen_task.result()
+            readers = cap_task.result()
             for (port, runit), reader in readers.items():
                 status[port] = CaptureReturnCode.SUCCESS
                 data[(port, runit)] = reader_to_flat_wave(reader)
