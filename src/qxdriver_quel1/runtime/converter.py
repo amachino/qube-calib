@@ -76,8 +76,8 @@ class Converter:
         software_demodulation: bool,
         enable_sum: bool,
         enable_classification: bool = False,
-        line_param0: tuple[float, float, float] = (1, 0, 0),
-        line_param1: tuple[float, float, float] = (0, 1, 0),
+        line_param0: dict[str, tuple[float, float, float]] | None = None,
+        line_param1: dict[str, tuple[float, float, float]] | None = None,
     ) -> dict[tuple[str, Quel1PortType, int], WaveSequence | CaptureParam]:
         """
         Convert sampled sequences into per-device generation/capture settings.
@@ -110,10 +110,6 @@ class Converter:
             Whether to enable SUM DSP.
         enable_classification : bool, default False
             Whether to enable classification DSP.
-        line_param0 : tuple[float, float, float], default (1, 0, 0)
-            Decision boundary parameter set 0 for classification.
-        line_param1 : tuple[float, float, float], default (0, 1, 0)
-            Decision boundary parameter set 1 for classification.
 
         Returns
         -------
@@ -179,8 +175,8 @@ class Converter:
         software_demodulation: bool,
         enable_sum: bool,
         enable_classification: bool = False,
-        line_param0: tuple[float, float, float] = (1, 0, 0),
-        line_param1: tuple[float, float, float] = (0, 1, 0),
+        line_param0: dict[str, tuple[float, float, float]] | None = None,
+        line_param1: dict[str, tuple[float, float, float]] | None = None,
     ) -> dict[tuple[str, Quel1PortType, int], CaptureParam]:
         """
         Convert capture sampled sequences into per-runit `CaptureParam` objects.
@@ -215,10 +211,6 @@ class Converter:
             Whether to enable SUM DSP.
         enable_classification : bool, default False
             Whether to enable classification DSP.
-        line_param0 : tuple[float, float, float], default (1, 0, 0)
-            Decision boundary parameter set 0.
-        line_param1 : tuple[float, float, float], default (0, 1, 0)
-            Decision boundary parameter set 1.
 
         Returns
         -------
@@ -302,9 +294,27 @@ class Converter:
                 id: CaptureParamTools.enable_sum(capprm=e7) for id, e7 in ids_e7.items()
             }
         if enable_classification:
+            if line_param0 is None or line_param1 is None:
+                raise ValueError(
+                    "classification line parameters are required for all capture targets."
+                )
+            missing_targets = sorted(
+                target
+                for target in ids_targets.values()
+                if target not in line_param0
+                or target not in line_param1
+            )
+            if missing_targets:
+                joined = ", ".join(missing_targets)
+                raise ValueError(
+                    "classification line parameters are missing for capture targets: "
+                    f"{joined}."
+                )
             ids_e7 = {
                 id: CaptureParamTools.enable_classification(
-                    capprm=e7, line_param0=line_param0, line_param1=line_param1
+                    capprm=e7,
+                    line_param0=line_param0[ids_targets[id]],
+                    line_param1=line_param1[ids_targets[id]],
                 )
                 for id, e7 in ids_e7.items()
             }

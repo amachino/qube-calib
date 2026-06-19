@@ -202,8 +202,8 @@ class Sequencer(Command):
         *,
         enable_sum: bool = False,
         enable_classification: bool = False,
-        line_param0: tuple[float, float, float] = (1, 0, 0),
-        line_param1: tuple[float, float, float] = (0, 1, 0),
+        line_param0: dict[str, tuple[float, float, float]] | None = None,
+        line_param1: dict[str, tuple[float, float, float]] | None = None,
     ) -> None:
         """Set measurement options applied during execution."""
         self.repeats = repeats
@@ -472,11 +472,15 @@ class Sequencer(Command):
     def parse_capture_result(
         self,
         status: CaptureReturnCode,
-        data: npt.NDArray[np.complex64],
+        data: Any,
         cprm: CaptureParam,
     ) -> tuple[CaptureReturnCode, list[npt.NDArray[np.complex64]]]:
         # num_expected_words = cprm.calc_capture_samples()
         """Parse one capture payload according to capture parameters."""
+        if DspUnit.CLASSIFICATION in cprm.dsp_units_enabled and isinstance(data, list):
+            return status, [np.asarray(section).reshape(-1) for section in data]
+
+        data = np.asarray(data)
         if DspUnit.INTEGRATION in cprm.dsp_units_enabled:
             data = data.reshape(1, -1)
         else:
