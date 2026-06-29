@@ -11,6 +11,7 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
+from qxdriver_quel1.classification import ClassificationLineSet
 from qxdriver_quel1.e7awg.compat import CaptureParam
 from qxdriver_quel1.pulse import GenSampledSequence, GenSampledSubSequence
 from qxdriver_quel1.runtime.converter import Converter
@@ -273,8 +274,10 @@ def test_convert_to_cap_sequence_uses_per_target_classification_lines(
         software_demodulation=False,
         enable_sum=False,
         enable_classification=True,
-        line_param0={"RQ00": line0_rq00, "RQ01": line0_rq01},
-        line_param1={"RQ00": line1_rq00, "RQ01": line1_rq01},
+        classification_lines={
+            "RQ00": ClassificationLineSet(line0=line0_rq00, line1=line1_rq00),
+            "RQ01": ClassificationLineSet(line0=line0_rq01, line1=line1_rq01),
+        },
     )
 
     assert converted[("B0", 0, 0)].classification_params[0] == line0_rq00
@@ -355,8 +358,25 @@ def test_convert_to_cap_sequence_does_not_enable_classification_by_default(
         dsp_demodulation=False,
         software_demodulation=False,
         enable_sum=False,
-        line_param0={"RQ00": (1.0, 0.0, -1.0)},
-        line_param1={"RQ00": (0.0, 1.0, -1.0)},
     )
 
     assert ("B0", 0, 0) in converted
+
+
+def test_convert_to_cap_sequence_allows_awg_only_classification_flag() -> None:
+    """Given no capture targets, classification flag should not require line maps."""
+    converted = Converter.convert_to_cap_device_specific_sequence(
+        gen_sampled_sequence={},
+        cap_sampled_sequence={},
+        resource_map={},
+        port_config={},
+        repeats=1,
+        interval=64.0,
+        integral_mode="single",
+        dsp_demodulation=False,
+        software_demodulation=False,
+        enable_sum=False,
+        enable_classification=True,
+    )
+
+    assert converted == {}

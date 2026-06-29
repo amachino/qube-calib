@@ -9,9 +9,11 @@ from typing import Any, Final, Literal, NamedTuple, TypeAlias, cast
 from quel_ic_config import Quel1Box
 from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
 
-from qxdriver_quel1.e7awg.compat import CaptureParam, DspUnit, WaveSequence
+from qxdriver_quel1.e7awg.compat import CaptureParam, WaveSequence
 
-from .compat import convert_captureparam, convert_wavesequence, reader_to_capture_data
+from .capture_result import CaptureResult, read_capture_result
+from .compat import convert_captureparam, convert_wavesequence
+from .e7awghal_classification_patch import patched_classification_register_builder
 
 Quel1PortType: TypeAlias = int | tuple[int, int]
 _TriggeredCaptureKey: TypeAlias = Literal["__triggered__"]
@@ -177,11 +179,15 @@ class Action:
                 awg_param=converted.awg_param,
             )
         for runit, cprm in self._cprms.items():
-            self.box.config_runit(
-                port=runit.port,
-                runit=runit.runit,
-                capture_param=convert_captureparam(cprm),
-            )
+            capture_param = convert_captureparam(cprm)
+            with patched_classification_register_builder(
+                required=capture_param.classification_enable
+            ):
+                self.box.config_runit(
+                    port=runit.port,
+                    runit=runit.runit,
+                    capture_param=capture_param,
+                )
 
     def capture_start(
         self,
@@ -281,7 +287,7 @@ class Action:
         futures: dict[CaptureFutureKey, Any],
     ) -> tuple[
         dict[Quel1PortType, CaptureReturnCode],
-        dict[tuple[Quel1PortType, int], Any],
+        dict[tuple[Quel1PortType, int], CaptureResult],
     ]:
         """
         Resolve capture futures and return status/data maps.
@@ -293,26 +299,22 @@ class Action:
 
         Returns
         -------
-        tuple[dict[Quel1PortType, CaptureReturnCode], dict[tuple[Quel1PortType, int], Any]]
+        tuple[dict[Quel1PortType, CaptureReturnCode], dict[tuple[Quel1PortType, int], CaptureResult]]
             Flattened status and capture data maps.
         """
         status: dict[Quel1PortType, CaptureReturnCode] = {}
-        data: dict[tuple[Quel1PortType, int], Any] = {}
+        data: dict[tuple[Quel1PortType, int], CaptureResult] = {}
 
         triggered_futures = futures.get(_TRIGGERED_CAPTURE_KEY)
         if triggered_futures is not None:
             cap_task, gen_task = cast(tuple[Any, Any], triggered_futures)
-            readers = cap_task.result()
             gen_task.result()
+            readers = cap_task.result()
             for (port, runit), reader in readers.items():
                 status[port] = CaptureReturnCode.SUCCESS
-                classification_enabled = (
-                    DspUnit.CLASSIFICATION
-                    in self._cprms[RunitId(port=port, runit=runit)].dsp_units_enabled
-                )
-                data[(port, runit)] = reader_to_capture_data(
+                data[(port, runit)] = read_capture_result(
                     reader,
-                    classification_enabled=classification_enabled,
+                    self._cprms[RunitId(port=port, runit=runit)],
                 )
             return status, data
 
@@ -322,13 +324,9 @@ class Action:
             readers = future.result()
             status[port] = CaptureReturnCode.SUCCESS
             for (_, runit), reader in readers.items():
-                classification_enabled = (
-                    DspUnit.CLASSIFICATION
-                    in self._cprms[RunitId(port=port, runit=runit)].dsp_units_enabled
-                )
-                data[(port, runit)] = reader_to_capture_data(
+                data[(port, runit)] = read_capture_result(
                     reader,
-                    classification_enabled=classification_enabled,
+                    self._cprms[RunitId(port=port, runit=runit)],
                 )
         return status, data
 
@@ -336,14 +334,14 @@ class Action:
         self,
     ) -> tuple[
         dict[Quel1PortType, CaptureReturnCode],
-        dict[tuple[Quel1PortType, int], Any],
+        dict[tuple[Quel1PortType, int], CaptureResult],
     ]:
         """
         Execute one action cycle and return capture results.
 
         Returns
         -------
-        tuple[dict[Quel1PortType, CaptureReturnCode], dict[tuple[Quel1PortType, int], Any]]
+        tuple[dict[Quel1PortType, CaptureReturnCode], dict[tuple[Quel1PortType, int], CaptureResult]]
             Flattened status and capture data maps.
         """
         if self._wseqs and self._cprms and self._triggers:

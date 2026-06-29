@@ -8,8 +8,6 @@ from logging import getLogger
 from types import MappingProxyType
 from typing import Any, Final, NamedTuple, cast
 
-import numpy as np
-import numpy.typing as npt
 from quel_ic_config import Quel1Box
 from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
 
@@ -20,6 +18,7 @@ from qxdriver_quel1.clockmaster.compat import (
 )
 
 from . import single
+from .capture_result import CaptureResult
 from .single import Quel1PortType
 
 logger = getLogger(__name__)
@@ -570,7 +569,7 @@ class Action:
         futures: dict[str, dict[single.CaptureFutureKey, Any]],
     ) -> tuple[
         dict[tuple[str, Quel1PortType], CaptureReturnCode],
-        dict[tuple[str, Quel1PortType, int], npt.NDArray[np.complex64]],
+        dict[tuple[str, Quel1PortType, int], CaptureResult],
     ]:
         """
         Resolve capture futures and flatten status/data maps.
@@ -582,15 +581,15 @@ class Action:
 
         Returns
         -------
-        tuple[dict[tuple[str, Quel1PortType], CaptureReturnCode], dict[tuple[str, Quel1PortType, int], NDArray[np.complex64]]]
-            Flattened status and IQ maps with box names.
+        tuple[dict[tuple[str, Quel1PortType], CaptureReturnCode], dict[tuple[str, Quel1PortType, int], CaptureResult]]
+            Flattened status and capture data maps with box names.
         """
         box_results = {
             name: self._actions[name].capture_stop(future)
             for name, future in futures.items()
         }
         status: dict[tuple[str, Quel1PortType], CaptureReturnCode] = {}
-        data: dict[tuple[str, Quel1PortType, int], npt.NDArray[np.complex64]] = {}
+        data: dict[tuple[str, Quel1PortType, int], CaptureResult] = {}
         for name, (box_status, box_data) in box_results.items():
             for port, capture_return_code in box_status.items():
                 status[(name, port)] = capture_return_code
@@ -602,7 +601,7 @@ class Action:
         self,
     ) -> tuple[
         dict[tuple[str, Quel1PortType], CaptureReturnCode],
-        dict[tuple[str, Quel1PortType, int], npt.NDArray[np.complex64]],
+        dict[tuple[str, Quel1PortType, int], CaptureResult],
     ]:
         """
         Execute synchronized action and return capture results.
@@ -620,8 +619,8 @@ class Action:
 
         Returns
         -------
-        tuple[dict[tuple[str, Quel1PortType], CaptureReturnCode], dict[tuple[str, Quel1PortType, int], NDArray[np.complex64]]]
-            Flattened status and IQ maps with box names.
+        tuple[dict[tuple[str, Quel1PortType], CaptureReturnCode], dict[tuple[str, Quel1PortType, int], CaptureResult]]
+            Flattened status and capture data maps with box names.
 
         Notes
         -----

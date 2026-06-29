@@ -3,24 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from quel_ic_config import AwgParam, CapIqDataReader, CapParam, CapSection, WaveChunk
+from quel_ic_config import AwgParam, CapParam, CapSection, WaveChunk
 
 from qxdriver_quel1.e7awg.compat import CaptureParam, DspUnit, WaveSequence
 
-try:
-    from e7awghal.classification import ClassificationParam
-except ModuleNotFoundError:  # pragma: no cover - depends on quelware install extras
-    ClassificationParam = None  # type: ignore[assignment]
-
-
-_QUBEX_CLASSIFICATION_LINES_ATTR = "__qubex_classification_lines__"
-_RAW_CLASSIFICATION_LINES_PATCH_ATTR = (
-    "__qxdriver_raw_classification_lines_patch_applied__"
+from .classification_param import (
+    classification_lines_from_capture_param,
+    convert_classification_param,
 )
+from .e7awghal_classification_patch import RAW_CLASSIFICATION_LINES_ATTR
 
 
 @dataclass(frozen=True)
@@ -58,136 +52,6 @@ def convert_wavesequence(
     return ConvertedAwgParam(awg_param=awg_param, wavedata=wavedata)
 
 
-def _line_angle(line: tuple[float, float, float]) -> float:
-    """Return the line angle expected by `ClassificationParam`."""
-    a, b, _ = (float(value) for value in line)
-    if np.isclose(a, 0.0) and np.isclose(b, 0.0):
-        raise ValueError("Classification line coefficients must not both be zero.")
-    return float(np.degrees(np.arctan2(-a, b)))
-
-
-def _point_on_line(line: tuple[float, float, float]) -> tuple[float, float]:
-    """Return one point on the given line."""
-    a, b, c = (float(value) for value in line)
-    denom = a * a + b * b
-    if denom == 0:
-        raise ValueError("Classification line coefficients must not both be zero.")
-    return (-a * c / denom, -b * c / denom)
-
-
-def _intersection_point(
-    line0: tuple[float, float, float],
-    line1: tuple[float, float, float],
-) -> tuple[float, float]:
-    """Return the intersection point of two non-parallel lines."""
-    a0, b0, c0 = (float(value) for value in line0)
-    a1, b1, c1 = (float(value) for value in line1)
-    det = a0 * b1 - a1 * b0
-    if np.isclose(det, 0.0):
-        raise ValueError("Classification lines are parallel and do not intersect.")
-    x, y = np.linalg.solve(
-        np.array([[a0, b0], [a1, b1]], dtype=np.float64),
-        np.array([-c0, -c1], dtype=np.float64),
-    )
-    return (float(x), float(y))
-
-
-def _line_to_reg_half(
-    line: tuple[float, float, float],
-    total_exponent_offset: int,
-) -> npt.NDArray[np.float32]:
-    """Convert one raw line equation into the register half used by e7awghal."""
-    a, b, c = (float(value) for value in line)
-    coeff_max = max(abs(a), abs(b))
-    if coeff_max == 0.0:
-        raise ValueError("Classification line coefficients must not both be zero.")
-    scale = 32767.0 / coeff_max
-    return np.asarray(
-        [
-            a * scale,
-            b * scale,
-            c * scale * float(1 << total_exponent_offset),
-        ],
-        dtype=np.float32,
-    )
-
-
-def _ensure_raw_classification_lines_patch() -> None:
-    """Patch e7awghal so parallel raw classification lines are not collapsed."""
-    try:
-        from e7awghal import capunit
-    except ImportError:
-        return
-
-    classification_reg_file_cls = getattr(
-        capunit,
-        "_CapParamClassificationRegFile",
-        None,
-    )
-    if classification_reg_file_cls is None or getattr(
-        classification_reg_file_cls,
-        _RAW_CLASSIFICATION_LINES_PATCH_ATTR,
-        False,
-    ):
-        return
-
-    original_fromcapparam = classification_reg_file_cls.fromcapparam
-
-    def _classification_fromcapparam(cls: type, cp: Any) -> Any:
-        lines = getattr(cp, _QUBEX_CLASSIFICATION_LINES_ATTR, None)
-        if lines is None:
-            return original_fromcapparam(cp)
-        line0, line1 = lines
-        reg_file = cls()
-        total_exponent_offset = cp.total_exponent_offset()
-        reg_file.p0 = _line_to_reg_half(line0, total_exponent_offset)
-        reg_file.p1 = _line_to_reg_half(line1, total_exponent_offset)
-        return reg_file
-
-    classification_reg_file_cls.fromcapparam = classmethod(
-        _classification_fromcapparam
-    )
-    setattr(classification_reg_file_cls, _RAW_CLASSIFICATION_LINES_PATCH_ATTR, True)
-
-
-def _classification_lines(
-    cprm: CaptureParam,
-) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
-    """Return both legacy classification decision-function lines."""
-    try:
-        line0 = tuple(float(value) for value in cprm.classification_params[0])
-        line1 = tuple(float(value) for value in cprm.classification_params[1])
-    except KeyError as exc:
-        raise ValueError(
-            "Classification DSP requires both decision functions 0 and 1."
-        ) from exc
-    return line0, line1
-
-
-def _convert_classification_param(cprm: CaptureParam) -> Any:
-    """Convert legacy line parameters into a direct-driver classification param."""
-    if ClassificationParam is None:
-        raise RuntimeError(
-            "e7awghal.classification.ClassificationParam is required for direct-driver classification conversion."
-        )
-    line0, line1 = _classification_lines(cprm)
-
-    a0, b0, _ = line0
-    a1, b1, _ = line1
-    det = a0 * b1 - a1 * b0
-    if np.isclose(det, 0.0):
-        pivot_x, pivot_y = _point_on_line(line0)
-    else:
-        pivot_x, pivot_y = _intersection_point(line0, line1)
-
-    return ClassificationParam(
-        pivot_x=pivot_x,
-        pivot_y=pivot_y,
-        angle_main=_line_angle(line0),
-        angle_sub=_line_angle((-line1[0], -line1[1], -line1[2])),
-    )
-
-
 def convert_captureparam(cprm: CaptureParam) -> CapParam:
     """Convert e7awgsw.CaptureParam to e7awghal.CapParam."""
     cap_param = CapParam(
@@ -213,12 +77,14 @@ def convert_captureparam(cprm: CaptureParam) -> CapParam:
     cap_param.window_enable = DspUnit.COMPLEX_WINDOW in dsp_enabled
     cap_param.classification_enable = DspUnit.CLASSIFICATION in dsp_enabled
     if cap_param.classification_enable:
-        _ensure_raw_classification_lines_patch()
-        cap_param.classification_param = _convert_classification_param(cprm)
+        cap_param.classification_param = convert_classification_param(cprm)
+        # e7awghal's pivot/angle representation cannot preserve separated
+        # parallel lines.  Store raw line equations for the scoped register
+        # builder patch used only while `config_runit` builds registers.
         setattr(
             cap_param,
-            _QUBEX_CLASSIFICATION_LINES_ATTR,
-            _classification_lines(cprm),
+            RAW_CLASSIFICATION_LINES_ATTR,
+            classification_lines_from_capture_param(cprm),
         )
 
     fir_coefs = getattr(cprm, "complex_fir_coefs", None)
@@ -256,19 +122,3 @@ def convert_captureparam(cprm: CaptureParam) -> CapParam:
             dtype=np.complex128,
         )
     return cap_param
-
-
-def reader_to_capture_data(
-    reader: CapIqDataReader,
-    *,
-    classification_enabled: bool,
-) -> Any:
-    """Return wave or classified capture payload from one reader."""
-    if classification_enabled:
-        return reader.as_class_list()
-    return reader.rawwave()
-
-
-def reader_to_flat_wave(reader: CapIqDataReader) -> npt.NDArray[np.complex64]:
-    """Return one-dimensional complex waveform from capture reader."""
-    return reader.rawwave()

@@ -11,6 +11,12 @@ import numpy.typing as npt
 from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
 
 from qxdriver_quel1 import driver as direct
+from qxdriver_quel1.classification import ClassificationLineMap
+from qxdriver_quel1.driver.capture_result import (
+    CaptureResult,
+    ClassificationCaptureResult,
+    WaveCaptureResult,
+)
 from qxdriver_quel1.e7awg.compat import (
     CaptureModule,
     CaptureParam,
@@ -202,8 +208,7 @@ class Sequencer(Command):
         *,
         enable_sum: bool = False,
         enable_classification: bool = False,
-        line_param0: dict[str, tuple[float, float, float]] | None = None,
-        line_param1: dict[str, tuple[float, float, float]] | None = None,
+        classification_lines: ClassificationLineMap | None = None,
     ) -> None:
         """Set measurement options applied during execution."""
         self.repeats = repeats
@@ -214,8 +219,7 @@ class Sequencer(Command):
         self.phase_compensation = phase_compensation
         self.enable_sum = enable_sum
         self.enable_classification = enable_classification
-        self.line_param0 = line_param0
-        self.line_param1 = line_param1
+        self.classification_lines = classification_lines
 
     def generate_cap_resource_map(self, boxpool: BoxPool) -> dict[str, Any]:
         """Build a target-to-capture-resource map."""
@@ -347,8 +351,7 @@ class Sequencer(Command):
                 software_demodulation=self.software_demodulation,
                 enable_sum=self.enable_sum,
                 enable_classification=self.enable_classification,
-                line_param0=self.line_param0,
-                line_param1=self.line_param1,
+                classification_lines=self.classification_lines,
             )
         )
         # phase_offset_list_by_target = {
@@ -430,7 +433,7 @@ class Sequencer(Command):
     def parse_capture_results(
         self,
         status: dict[tuple[str, Quel1PortType], CaptureReturnCode],
-        results: dict[tuple[str, Quel1PortType, int], npt.NDArray[np.complex64]],
+        results: dict[tuple[str, Quel1PortType, int], CaptureResult],
         action: direct.Action,
         crmap: dict[str, Any],
     ) -> tuple[dict[str, CaptureReturnCode], dict[str, list], dict]:
@@ -472,29 +475,35 @@ class Sequencer(Command):
     def parse_capture_result(
         self,
         status: CaptureReturnCode,
-        data: Any,
+        data: CaptureResult,
         cprm: CaptureParam,
-    ) -> tuple[CaptureReturnCode, list[npt.NDArray[np.complex64]]]:
+    ) -> tuple[
+        CaptureReturnCode,
+        list[npt.NDArray[np.complex64] | npt.NDArray[np.uint8]],
+    ]:
         # num_expected_words = cprm.calc_capture_samples()
         """Parse one capture payload according to capture parameters."""
-        if DspUnit.CLASSIFICATION in cprm.dsp_units_enabled and isinstance(data, list):
-            return status, [np.asarray(section).reshape(-1) for section in data]
+        if isinstance(data, ClassificationCaptureResult):
+            return status, [np.asarray(section).reshape(-1) for section in data.labels]
 
-        data = np.asarray(data)
+        if not isinstance(data, WaveCaptureResult):
+            raise TypeError(f"unsupported capture result: {data!r}")
+
+        data_array = np.asarray(data.sections[0])
         if DspUnit.INTEGRATION in cprm.dsp_units_enabled:
-            data = data.reshape(1, -1)
+            data_array = data_array.reshape(1, -1)
         else:
-            data = data.reshape(cprm.num_integ_sections, -1)
+            data_array = data_array.reshape(cprm.num_integ_sections, -1)
         if DspUnit.SUM in cprm.dsp_units_enabled:
             width = len(cprm.sum_section_list)
-            result = np.hsplit(data, width)
+            result = np.hsplit(data_array, width)
         else:
             b = DspUnit.DECIMATION not in cprm.dsp_units_enabled
             ssl = cprm.sum_section_list
             ws = [w if b else int(w // 4) for w, _ in ssl[:-1]]
             word = cprm.NUM_SAMPLES_IN_ADC_WORD
             width = np.cumsum(np.array(ws))
-            result = np.hsplit(data, width * word)
+            result = np.hsplit(data_array, width * word)
         return status, result
 
     def create_quel1system(self, boxpool: BoxPool) -> direct.Quel1System:

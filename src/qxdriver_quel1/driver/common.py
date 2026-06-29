@@ -5,13 +5,12 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Final, NamedTuple
 
-import numpy as np
-import numpy.typing as npt
 from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
 
 from qxdriver_quel1.e7awg.compat import CaptureParam, WaveSequence
 
 from . import multi, single
+from .capture_result import CaptureResult
 from .single import Quel1PortType
 
 
@@ -158,15 +157,15 @@ class Action:
         self,
     ) -> tuple[
         dict[tuple[str, Quel1PortType], CaptureReturnCode],
-        dict[tuple[str, Quel1PortType, int], npt.NDArray[np.complex64]],
+        dict[tuple[str, Quel1PortType, int], CaptureResult],
     ]:
         """
         Execute and normalize results to box-scoped maps.
 
         Returns
         -------
-        tuple[dict[tuple[str, Quel1PortType], CaptureReturnCode], dict[tuple[str, Quel1PortType, int], NDArray[np.complex64]]]
-            Box-prefixed status and IQ data.
+        tuple[dict[tuple[str, Quel1PortType], CaptureReturnCode], dict[tuple[str, Quel1PortType, int], CaptureResult]]
+            Box-prefixed status and capture data.
         """
         if isinstance(self._action, tuple):
             name, single_action = self._action

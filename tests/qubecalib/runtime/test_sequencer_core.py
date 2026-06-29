@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
+from qxdriver_quel1.driver.capture_result import ClassificationCaptureResult
 from qxdriver_quel1.e7awg.compat import CaptureParam, DspUnit
 from qxdriver_quel1.runtime.sequencer_core import Sequencer
 
@@ -22,7 +23,7 @@ def test_parse_capture_result_accepts_classification_class_list() -> None:
     parsed_status, parsed_data = Sequencer.parse_capture_result(
         object.__new__(Sequencer),
         status,
-        [raw_labels],
+        ClassificationCaptureResult(labels=(raw_labels,)),
         cprm,
     )
 

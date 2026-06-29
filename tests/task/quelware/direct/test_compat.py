@@ -5,11 +5,18 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from qxdriver_quel1.e7awg.compat import CaptureParam, DspUnit, WaveSequence
-from qxdriver_quel1.driver import compat as compat_module
+from qxdriver_quel1.driver import classification_param as classification_param_module
+from qxdriver_quel1.driver.capture_result import (
+    ClassificationCaptureResult,
+    read_capture_result,
+)
 from qxdriver_quel1.driver.compat import (
     convert_captureparam,
     convert_wavesequence,
-    reader_to_capture_data,
+)
+from qxdriver_quel1.driver.e7awghal_classification_patch import (
+    RAW_CLASSIFICATION_LINES_ATTR,
+    patched_classification_register_builder,
 )
 
 
@@ -80,7 +87,7 @@ def test_convert_captureparam_scales_window_coefficients() -> None:
 
 def test_convert_captureparam_maps_identical_classification_lines() -> None:
     """Given identical decision lines, conversion should emit a direct-driver classification param."""
-    if compat_module.ClassificationParam is None:
+    if classification_param_module.ClassificationParam is None:
         pytest.skip("direct-driver ClassificationParam is not available")
 
     cprm = CaptureParam()
@@ -110,7 +117,7 @@ def test_convert_captureparam_maps_identical_classification_lines() -> None:
 
 def test_convert_captureparam_preserves_parallel_classification_lines() -> None:
     """Given distinct parallel decision lines, conversion should preserve raw line coefficients."""
-    if compat_module.ClassificationParam is None:
+    if classification_param_module.ClassificationParam is None:
         pytest.skip("direct-driver ClassificationParam is not available")
 
     cprm = CaptureParam()
@@ -134,7 +141,7 @@ def test_convert_captureparam_preserves_parallel_classification_lines() -> None:
     converted = convert_captureparam(cprm)
 
     assert converted.classification_enable is True
-    assert converted.__qubex_classification_lines__ == (
+    assert getattr(converted, RAW_CLASSIFICATION_LINES_ATTR) == (
         (1.0, 0.0, -2.0),
         (1.0, 0.0, -3.0),
     )
@@ -142,7 +149,7 @@ def test_convert_captureparam_preserves_parallel_classification_lines() -> None:
 
 def test_convert_captureparam_patches_parallel_classification_registers() -> None:
     """Given parallel decision lines, conversion should keep distinct register halves."""
-    if compat_module.ClassificationParam is None:
+    if classification_param_module.ClassificationParam is None:
         pytest.skip("direct-driver ClassificationParam is not available")
     capunit = pytest.importorskip("e7awghal.capunit")
 
@@ -163,7 +170,8 @@ def test_convert_captureparam_patches_parallel_classification_registers() -> Non
     )
 
     converted = convert_captureparam(cprm)
-    reg_file = capunit._CapParamClassificationRegFile.fromcapparam(converted)
+    with patched_classification_register_builder(required=True):
+        reg_file = capunit._CapParamClassificationRegFile.fromcapparam(converted)
 
     assert np.asarray(reg_file.p0).tolist() == pytest.approx(
         [32767.0, 0.0, -65534.0]
@@ -173,7 +181,24 @@ def test_convert_captureparam_patches_parallel_classification_registers() -> Non
     )
 
 
-def test_reader_to_capture_data_uses_class_list_for_classification() -> None:
+def test_patched_classification_register_builder_restores_on_exception() -> None:
+    """Given an exception inside the patch scope, fromcapparam should be restored."""
+    capunit = pytest.importorskip("e7awghal.capunit")
+    reg_file_cls = capunit._CapParamClassificationRegFile
+    original = reg_file_cls.fromcapparam
+    original_func = getattr(original, "__func__", original)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        with patched_classification_register_builder(required=True):
+            patched_func = getattr(reg_file_cls.fromcapparam, "__func__")
+            assert patched_func is not original_func
+            raise RuntimeError("boom")
+
+    restored_func = getattr(reg_file_cls.fromcapparam, "__func__", None)
+    assert restored_func is original_func
+
+
+def test_read_capture_result_uses_class_list_for_classification() -> None:
     """Given classification capture mode, reader conversion should return class-list payloads."""
 
     class _Reader:
@@ -183,7 +208,10 @@ def test_reader_to_capture_data_uses_class_list_for_classification() -> None:
         def rawwave(self) -> np.ndarray:
             raise AssertionError
 
-    payload = reader_to_capture_data(_Reader(), classification_enabled=True)
+    cprm = CaptureParam()
+    cprm.sel_dsp_units_to_enable(DspUnit.CLASSIFICATION)
+    payload = read_capture_result(_Reader(), cprm)
 
-    assert len(payload) == 1
-    assert np.array_equal(payload[0], np.array([0, 3], dtype=np.uint8))
+    assert isinstance(payload, ClassificationCaptureResult)
+    assert len(payload.labels) == 1
+    assert np.array_equal(payload.labels[0], np.array([0, 3], dtype=np.uint8))
