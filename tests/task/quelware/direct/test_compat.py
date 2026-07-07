@@ -215,3 +215,19 @@ def test_read_capture_result_uses_class_list_for_classification() -> None:
     assert isinstance(payload, ClassificationCaptureResult)
     assert len(payload.labels) == 1
     assert np.array_equal(payload.labels[0], np.array([0, 3], dtype=np.uint8))
+
+
+def test_read_capture_result_returns_rawwave_for_wave_capture() -> None:
+    """Given normal capture mode, reader conversion should keep the legacy ndarray payload."""
+    rawwave = np.array([1.0 + 2.0j, 3.0 + 4.0j], dtype=np.complex64)
+
+    class _Reader:
+        def as_class_list(self) -> list[np.ndarray]:
+            raise AssertionError
+
+        def rawwave(self) -> np.ndarray:
+            return rawwave
+
+    payload = read_capture_result(_Reader(), CaptureParam())
+
+    assert payload is rawwave

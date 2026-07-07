@@ -1,4 +1,4 @@
-"""Typed capture results returned by direct-driver actions."""
+"""Capture results returned by direct-driver actions."""
 
 from __future__ import annotations
 
@@ -13,14 +13,6 @@ from qxdriver_quel1.e7awg.compat import CaptureParam, DspUnit
 
 
 @dataclass(frozen=True)
-class WaveCaptureResult:
-    """Wave capture payload from one capture unit."""
-
-    sections: tuple[npt.NDArray[np.complex64], ...]
-    kind: Literal["wave"] = "wave"
-
-
-@dataclass(frozen=True)
 class ClassificationCaptureResult:
     """DSP classification label payload from one capture unit."""
 
@@ -28,14 +20,14 @@ class ClassificationCaptureResult:
     kind: Literal["classification"] = "classification"
 
 
-CaptureResult: TypeAlias = WaveCaptureResult | ClassificationCaptureResult
+CaptureResult: TypeAlias = npt.NDArray[np.complex64] | ClassificationCaptureResult
 
 
 def read_capture_result(
     reader: CapIqDataReader,
     cprm: CaptureParam,
 ) -> CaptureResult:
-    """Read a typed capture result from a reader according to capture DSP mode."""
+    """Read capture data from a reader according to capture DSP mode."""
     if DspUnit.CLASSIFICATION in cprm.dsp_units_enabled:
         return ClassificationCaptureResult(
             labels=tuple(
@@ -43,6 +35,4 @@ def read_capture_result(
                 for section in reader.as_class_list()
             )
         )
-    return WaveCaptureResult(
-        sections=(np.asarray(reader.rawwave(), dtype=np.complex64),)
-    )
+    return reader.rawwave()

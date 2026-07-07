@@ -15,7 +15,6 @@ from qxdriver_quel1.classification import ClassificationLineMap
 from qxdriver_quel1.driver.capture_result import (
     CaptureResult,
     ClassificationCaptureResult,
-    WaveCaptureResult,
 )
 from qxdriver_quel1.e7awg.compat import (
     CaptureModule,
@@ -486,10 +485,7 @@ class Sequencer(Command):
         if isinstance(data, ClassificationCaptureResult):
             return status, [np.asarray(section).reshape(-1) for section in data.labels]
 
-        if not isinstance(data, WaveCaptureResult):
-            raise TypeError(f"unsupported capture result: {data!r}")
-
-        data_array = np.asarray(data.sections[0])
+        data_array = np.asarray(data)
         if DspUnit.INTEGRATION in cprm.dsp_units_enabled:
             data_array = data_array.reshape(1, -1)
         else:

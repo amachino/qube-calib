@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from . import multi, single
+from .capture_result import (
+    CaptureResult,
+    ClassificationCaptureResult,
+)
 from .common import (
     Action,
     AwgId,
@@ -10,11 +14,6 @@ from .common import (
     RunitId,
     RunitSetting,
     TriggerSetting,
-)
-from .capture_result import (
-    CaptureResult,
-    ClassificationCaptureResult,
-    WaveCaptureResult,
 )
 from .multi import NamedBox, Quel1System
 from .single import Quel1PortType
@@ -31,7 +30,6 @@ __all__ = [
     "RunitId",
     "RunitSetting",
     "TriggerSetting",
-    "WaveCaptureResult",
     "multi",
     "single",
 ]
