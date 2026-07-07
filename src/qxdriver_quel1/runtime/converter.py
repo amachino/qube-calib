@@ -12,6 +12,10 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from qxdriver_quel1.classification import (
+    ClassificationLineMap,
+    normalize_classification_line_set,
+)
 from qxdriver_quel1.e7awg.compat import CaptureParam, WaveSequence
 from qxdriver_quel1.e7awg.utils import (
     CaptureParamTools,
@@ -76,8 +80,7 @@ class Converter:
         software_demodulation: bool,
         enable_sum: bool,
         enable_classification: bool = False,
-        line_param0: tuple[float, float, float] = (1, 0, 0),
-        line_param1: tuple[float, float, float] = (0, 1, 0),
+        classification_lines: ClassificationLineMap | None = None,
     ) -> dict[tuple[str, Quel1PortType, int], WaveSequence | CaptureParam]:
         """
         Convert sampled sequences into per-device generation/capture settings.
@@ -110,10 +113,8 @@ class Converter:
             Whether to enable SUM DSP.
         enable_classification : bool, default False
             Whether to enable classification DSP.
-        line_param0 : tuple[float, float, float], default (1, 0, 0)
-            Decision boundary parameter set 0 for classification.
-        line_param1 : tuple[float, float, float], default (0, 1, 0)
-            Decision boundary parameter set 1 for classification.
+        classification_lines : ClassificationLineMap, optional
+            Two DSP classification lines for each capture target.
 
         Returns
         -------
@@ -142,8 +143,7 @@ class Converter:
             software_demodulation=software_demodulation,
             enable_sum=enable_sum,
             enable_classification=enable_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
+            classification_lines=classification_lines,
         )
         genseq = cls.convert_to_gen_device_specific_sequence(
             gen_sampled_sequence=gen_sampled_sequence,
@@ -179,8 +179,7 @@ class Converter:
         software_demodulation: bool,
         enable_sum: bool,
         enable_classification: bool = False,
-        line_param0: tuple[float, float, float] = (1, 0, 0),
-        line_param1: tuple[float, float, float] = (0, 1, 0),
+        classification_lines: ClassificationLineMap | None = None,
     ) -> dict[tuple[str, Quel1PortType, int], CaptureParam]:
         """
         Convert capture sampled sequences into per-runit `CaptureParam` objects.
@@ -215,10 +214,8 @@ class Converter:
             Whether to enable SUM DSP.
         enable_classification : bool, default False
             Whether to enable classification DSP.
-        line_param0 : tuple[float, float, float], default (1, 0, 0)
-            Decision boundary parameter set 0.
-        line_param1 : tuple[float, float, float], default (0, 1, 0)
-            Decision boundary parameter set 1.
+        classification_lines : ClassificationLineMap, optional
+            Two DSP classification lines for each capture target.
 
         Returns
         -------
@@ -301,10 +298,31 @@ class Converter:
             ids_e7 = {
                 id: CaptureParamTools.enable_sum(capprm=e7) for id, e7 in ids_e7.items()
             }
-        if enable_classification:
+        if enable_classification and ids_e7:
+            if classification_lines is None:
+                raise ValueError(
+                    "classification_lines are required for all capture targets."
+                )
+            missing_targets = sorted(
+                target
+                for target in ids_targets.values()
+                if target not in classification_lines
+            )
+            if missing_targets:
+                joined = ", ".join(missing_targets)
+                raise ValueError(
+                    "classification_lines are missing for capture targets: "
+                    f"{joined}."
+                )
+            normalized_lines = {
+                target: normalize_classification_line_set(classification_lines[target])
+                for target in ids_targets.values()
+            }
             ids_e7 = {
                 id: CaptureParamTools.enable_classification(
-                    capprm=e7, line_param0=line_param0, line_param1=line_param1
+                    capprm=e7,
+                    line_param0=normalized_lines[ids_targets[id]].line0,
+                    line_param1=normalized_lines[ids_targets[id]].line1,
                 )
                 for id, e7 in ids_e7.items()
             }

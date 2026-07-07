@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from quel_ic_config import Quel1Box, Quel1ConfigOption
 
+from qxdriver_quel1.classification import (
+    ClassificationLineMap,
+    ClassificationLineSet,
+    LineParam,
+)
 from qxdriver_quel1.clockmaster.compat import QuBEMasterClient, SequencerClient
 from qxdriver_quel1.driver import (
     Action,
@@ -54,9 +59,12 @@ EXPORTS: dict[str, object] = {
     "CapSampledSubSequence": CapSampledSubSequence,
     "CaptureParamTools": CaptureParamTools,
     "CaptureSlots": CaptureSlots,
+    "ClassificationLineMap": ClassificationLineMap,
+    "ClassificationLineSet": ClassificationLineSet,
     "Converter": Converter,
     "GenSampledSequence": GenSampledSequence,
     "GenSampledSubSequence": GenSampledSubSequence,
+    "LineParam": LineParam,
     "MultiAction": MultiAction,
     "NamedBox": NamedBox,
     "QuBEMasterClient": QuBEMasterClient,

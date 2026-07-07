@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from . import multi, single
+from .capture_result import (
+    CaptureResult,
+    ClassificationCaptureResult,
+)
 from .common import (
     Action,
     AwgId,
@@ -18,6 +22,8 @@ __all__ = [
     "Action",
     "AwgId",
     "AwgSetting",
+    "CaptureResult",
+    "ClassificationCaptureResult",
     "NamedBox",
     "Quel1PortType",
     "Quel1System",

@@ -6,9 +6,15 @@ from dataclasses import dataclass
 
 import numpy as np
 import numpy.typing as npt
-from quel_ic_config import AwgParam, CapIqDataReader, CapParam, CapSection, WaveChunk
+from quel_ic_config import AwgParam, CapParam, CapSection, WaveChunk
 
 from qxdriver_quel1.e7awg.compat import CaptureParam, DspUnit, WaveSequence
+
+from .classification_param import (
+    classification_lines_from_capture_param,
+    convert_classification_param,
+)
+from .e7awghal_classification_patch import RAW_CLASSIFICATION_LINES_ATTR
 
 
 @dataclass(frozen=True)
@@ -70,6 +76,16 @@ def convert_captureparam(cprm: CaptureParam) -> CapParam:
     cap_param.decimation_enable = DspUnit.DECIMATION in dsp_enabled
     cap_param.window_enable = DspUnit.COMPLEX_WINDOW in dsp_enabled
     cap_param.classification_enable = DspUnit.CLASSIFICATION in dsp_enabled
+    if cap_param.classification_enable:
+        cap_param.classification_param = convert_classification_param(cprm)
+        # e7awghal's pivot/angle representation cannot preserve separated
+        # parallel lines.  Store raw line equations for the scoped register
+        # builder patch used only while `config_runit` builds registers.
+        setattr(
+            cap_param,
+            RAW_CLASSIFICATION_LINES_ATTR,
+            classification_lines_from_capture_param(cprm),
+        )
 
     fir_coefs = getattr(cprm, "complex_fir_coefs", None)
     if fir_coefs:
@@ -106,8 +122,3 @@ def convert_captureparam(cprm: CaptureParam) -> CapParam:
             dtype=np.complex128,
         )
     return cap_param
-
-
-def reader_to_flat_wave(reader: CapIqDataReader) -> npt.NDArray[np.complex64]:
-    """Return one-dimensional complex waveform from capture reader."""
-    return reader.rawwave()
